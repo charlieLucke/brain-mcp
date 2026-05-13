@@ -20,24 +20,38 @@ from brain_mcp.watcher import VaultWatcher, _should_ignore
 # ---------------------------------------------------------------------------
 
 
+_VAULT = Path("/vault")
+
+
 def test_should_ignore_obsidian_dir() -> None:
-    assert _should_ignore(Path("/vault/.obsidian/config.json")) is True
+    assert _should_ignore(Path("/vault/.obsidian/config.json"), _VAULT) is True
 
 
 def test_should_ignore_trash() -> None:
-    assert _should_ignore(Path("/vault/.trash/note.md")) is True
+    assert _should_ignore(Path("/vault/.trash/note.md"), _VAULT) is True
 
 
 def test_should_ignore_git() -> None:
-    assert _should_ignore(Path("/vault/.git/COMMIT_EDITMSG")) is True
+    assert _should_ignore(Path("/vault/.git/COMMIT_EDITMSG"), _VAULT) is True
 
 
 def test_should_ignore_hidden_file() -> None:
-    assert _should_ignore(Path("/vault/.DS_Store")) is True
+    assert _should_ignore(Path("/vault/.DS_Store"), _VAULT) is True
 
 
 def test_should_not_ignore_normal_note() -> None:
-    assert _should_ignore(Path("/vault/notes/learning/rrf.md")) is False
+    assert _should_ignore(Path("/vault/notes/learning/rrf.md"), _VAULT) is False
+
+
+def test_should_not_ignore_note_under_dotfile_root() -> None:
+    """B-MED-2: vault placed under ~/.config/vault/ must not be ignored."""
+    dotroot = Path("/home/user/.config/vault")
+    assert _should_ignore(dotroot / "notes" / "rrf.md", dotroot) is False
+
+
+def test_should_ignore_path_outside_vault() -> None:
+    """Paths outside vault_root are always ignored."""
+    assert _should_ignore(Path("/tmp/other/note.md"), _VAULT) is True
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +255,92 @@ def test_filesystem_delete_triggers_chunk_delete(vault_root: Path, mock_client: 
 
     watcher.stop()
     assert mock_client.delete_chunks.called
+
+
+# ---------------------------------------------------------------------------
+# B-CRIT-2: Cool-down-based _ensure_titan_available
+# ---------------------------------------------------------------------------
+
+
+def test_cooldown_prevents_repeated_health_calls(
+    watcher: VaultWatcher, mock_client: MagicMock
+) -> None:
+    """After ConnectError, health() is not called again during cool-down window."""
+    import httpx
+
+    mock_client.health.side_effect = httpx.ConnectError("refused")
+
+    result1 = watcher._ensure_titan_available()
+    assert result1 is False
+    assert mock_client.health.call_count == 1
+
+    # Cool-down is active — second call must NOT hit health() again.
+    result2 = watcher._ensure_titan_available()
+    assert result2 is False
+    assert mock_client.health.call_count == 1  # unchanged
+
+
+def test_cooldown_resets_after_success(watcher: VaultWatcher, mock_client: MagicMock) -> None:
+    """After cool-down expires, a successful probe resets _titan_dead_until."""
+    import httpx
+
+    mock_client.health.side_effect = [httpx.ConnectError("refused"), None]
+
+    watcher._ensure_titan_available()  # sets cool-down
+    watcher._titan_dead_until = 0.0  # simulate expiry
+
+    result = watcher._ensure_titan_available()
+    assert result is True
+    assert mock_client.health.call_count == 2
+    assert watcher._titan_dead_until == 0.0
+
+
+def test_unexpected_exception_triggers_cooldown(
+    watcher: VaultWatcher, mock_client: MagicMock
+) -> None:
+    """B-CRIT-1 bridge: any exception from health() (e.g. ValidationError) sets cool-down."""
+    mock_client.health.side_effect = ValueError("unexpected schema error")
+
+    result = watcher._ensure_titan_available()
+    assert result is False
+    assert watcher._titan_dead_until > 0.0
+
+
+# ---------------------------------------------------------------------------
+# B-MED-3: Failed-Delete-Queue
+# ---------------------------------------------------------------------------
+
+
+def test_failed_delete_is_queued(watcher: VaultWatcher, mock_client: MagicMock) -> None:
+    """When Titan is unreachable during delete, the path goes to _pending_deletes."""
+    from unittest.mock import patch
+
+    path = Path("/vault/gone.md")
+    mock_client.delete_chunks.return_value = 1
+
+    with patch.object(watcher, "_ensure_titan_available", return_value=False):
+        watcher._handle_delete(path)
+
+    assert path in watcher._pending_deletes
+    mock_client.delete_chunks.assert_not_called()
+
+
+def test_queued_delete_retried_when_titan_recovers(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Pending deletes are executed by the worker once Titan becomes available."""
+    path = vault_root / "gone.md"
+    mock_client.delete_chunks.return_value = 1
+
+    # Seed the queue directly (as if a previous failed delete queued it).
+    with watcher._lock:
+        watcher._pending_deletes.add(path)
+
+    watcher.start()
+    time.sleep(0.3)  # give worker time to process
+    watcher.stop()
+
+    mock_client.delete_chunks.assert_called_once_with(path)
 
 
 @pytest.mark.integration

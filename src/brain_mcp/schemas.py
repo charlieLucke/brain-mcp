@@ -27,7 +27,7 @@ class HealthResponse(BaseModel):
     qdrant_reachable: bool
     vram_used_mb: int | None
     collection_name: str
-    colbert_dim: int
+    colbert_dim: int | None  # None when BGE-M3 is not loaded (degraded state)
 
 
 class SearchResponse(BaseModel):

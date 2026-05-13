@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+import frontmatter
 import httpx
 import pytest
 from werkzeug.wrappers import Request, Response
@@ -56,9 +57,10 @@ def mock_titan(httpserver: Any) -> Any:
     def ingest(request: Request) -> Response:
         data = json.loads(request.data)
         path = data["file_path"]
-        content = Path(path).read_text(encoding="utf-8")
+        post = frontmatter.load(path)
+        indexed = str(post.get("indexed", "true")).lower()
 
-        if "indexed: false" in content:
+        if indexed == "false":
             state["chunks"] = [c for c in state["chunks"] if c["source_path"] != path]
             return Response(
                 json.dumps(
@@ -77,7 +79,7 @@ def mock_titan(httpserver: Any) -> Any:
         # Mock successful ingest
         state["chunks"].append(
             {
-                "text": content,
+                "text": post.content,
                 "source_path": path,
                 "domain": "test",
                 "chunk_offset": 0,

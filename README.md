@@ -2,7 +2,27 @@
 
 MCP server and vault watcher that make my Obsidian notes searchable by Claude
 
-## Setup
+## Quick activation
+
+After cloning, activate the two components:
+
+**1 — Vault watcher (WSL systemd)**
+
+```bash
+mkdir -p ~/.config/systemd/user/
+ln -sf ~/projects/brain-mcp/deploy/brain-watcher.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now brain-watcher
+systemctl --user status brain-watcher
+```
+
+**2 — Claude Desktop MCP config (Windows)**
+
+Edit `%APPDATA%\Claude\claude_desktop_config.json` — see `deploy/README.md` for
+the exact JSON snippet. Restart Claude Desktop and verify four brain-tools appear.
+
+---
+
+## Development setup
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12+.
 

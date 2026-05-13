@@ -86,7 +86,7 @@ def ingest_note(file_path: str, force: bool = False) -> str:
 
     Args:
         file_path: Absolute path to the Markdown note inside the vault.
-        force: If True, re-index even if the file has not changed. Default False.
+        force: Currently without effect — Titan always re-ingests on every call. Default False.
 
     Returns:
         A short status message describing what happened (chunks created/replaced,

@@ -130,3 +130,22 @@ def test_health_404_raises(client: TitanClient) -> None:
     c._client = raw
     with pytest.raises(httpx.HTTPStatusError):
         c.health()
+
+
+def test_health_degraded_colbert_dim_none(client: TitanClient) -> None:
+    """B-CRIT-1 regression: colbert_dim=null must not raise a ValidationError."""
+    degraded = {
+        "status": "degraded",
+        "bge_loaded": False,
+        "qdrant_reachable": True,
+        "vram_used_mb": None,
+        "collection_name": "mein_wissen",
+        "colbert_dim": None,
+    }
+    transport = _mock_transport({("GET", "/health"): (200, degraded)})
+    raw = httpx.Client(base_url="http://127.0.0.1:8765", transport=transport)
+    c = TitanClient.__new__(TitanClient)
+    c._client = raw
+    result = c.health()  # must not raise
+    assert result.status == "degraded"
+    assert result.colbert_dim is None

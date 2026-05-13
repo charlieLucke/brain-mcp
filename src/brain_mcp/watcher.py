@@ -35,9 +35,18 @@ log = logging.getLogger(__name__)
 _IGNORE_DIRS: frozenset[str] = frozenset({".obsidian", ".trash", ".git"})
 
 
-def _should_ignore(path: Path) -> bool:
-    """Return True if this path should not trigger an ingest."""
-    return any(part in _IGNORE_DIRS or part.startswith(".") for part in path.parts)
+def _should_ignore(path: Path, vault_root: Path) -> bool:
+    """Return True if this path should not trigger an ingest.
+
+    Only considers path components relative to vault_root, so that a vault
+    placed under a dotfile directory (e.g. ~/.config/vault/) is not ignored.
+    Paths outside vault_root are always ignored.
+    """
+    try:
+        relative = path.relative_to(vault_root)
+    except ValueError:
+        return True
+    return any(part in _IGNORE_DIRS or part.startswith(".") for part in relative.parts)
 
 
 class _VaultEventHandler(FileSystemEventHandler):
@@ -51,7 +60,8 @@ class _VaultEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = Path(str(event.src_path))
-        if path.suffix.lower() != ".md" or _should_ignore(path):
+        vault_root = self._watcher.vault_root
+        if path.suffix.lower() != ".md" or _should_ignore(path, vault_root):
             return
         self._watcher._schedule(path)
 
@@ -62,7 +72,8 @@ class _VaultEventHandler(FileSystemEventHandler):
         if event.is_directory:
             return
         path = Path(str(event.src_path))
-        if path.suffix.lower() != ".md" or _should_ignore(path):
+        vault_root = self._watcher.vault_root
+        if path.suffix.lower() != ".md" or _should_ignore(path, vault_root):
             return
         # Delete fires immediately — no debouncing needed.
         self._watcher._handle_delete(path)
@@ -73,9 +84,10 @@ class _VaultEventHandler(FileSystemEventHandler):
             return
         old = Path(str(event.src_path))
         new = Path(str(getattr(event, "dest_path", event.src_path)))
-        if old.suffix.lower() == ".md" and not _should_ignore(old):
+        vault_root = self._watcher.vault_root
+        if old.suffix.lower() == ".md" and not _should_ignore(old, vault_root):
             self._watcher._handle_delete(old)
-        if new.suffix.lower() == ".md" and not _should_ignore(new):
+        if new.suffix.lower() == ".md" and not _should_ignore(new, vault_root):
             self._watcher._schedule(new)
 
 
@@ -104,8 +116,12 @@ class VaultWatcher:
 
         # {path: monotonic timestamp of the last event}
         self._pending: dict[Path, float] = {}
+        # Paths whose delete could not be delivered (Titan was down); retried by worker.
+        self._pending_deletes: set[Path] = set()
         self._lock = threading.Lock()
         self._stop = threading.Event()
+        # monotonic() timestamp until which Titan is considered unreachable (cool-down).
+        self._titan_dead_until: float = 0.0
 
         self._observer = Observer()
         self._observer.schedule(
@@ -150,14 +166,20 @@ class VaultWatcher:
         log.debug("Scheduled %s (debounce reset)", path)
 
     def _handle_delete(self, path: Path) -> None:
-        """Delete chunks for a removed note immediately."""
-        # Remove from pending if present (cancels any scheduled ingest).
+        """Delete chunks for a removed note immediately; queue if Titan is unreachable."""
         with self._lock:
             self._pending.pop(path, None)
+            self._pending_deletes.discard(path)
         log.info("Delete event: %s", path)
         if not self._ensure_titan_available():
-            log.error("Titan unreachable — could not delete chunks for %s", path)
+            log.warning("Titan unreachable — queuing delete for %s", path)
+            with self._lock:
+                self._pending_deletes.add(path)
             return
+        self._do_delete(path)
+
+    def _do_delete(self, path: Path) -> None:
+        """Execute a delete for a removed note's chunks."""
         try:
             n = self.titan_client.delete_chunks(path)
             log.info("Deleted %d chunk(s) for %s", n, path)
@@ -169,13 +191,26 @@ class VaultWatcher:
     # ------------------------------------------------------------------
 
     def _worker(self) -> None:
-        """Process debounced ingest events."""
+        """Process debounced ingest events and queued deletes."""
         while not self._stop.is_set():
             now = time.monotonic()
             with self._lock:
                 ready = [p for p, t in self._pending.items() if now - t >= self.debounce_seconds]
                 for p in ready:
                     del self._pending[p]
+                pending_deletes = list(self._pending_deletes)
+                self._pending_deletes.clear()
+
+            # Retry queued deletes (failed earlier because Titan was unreachable).
+            failed: list[Path] = []
+            for path in pending_deletes:
+                if not self._ensure_titan_available():
+                    failed.append(path)
+                else:
+                    self._do_delete(path)
+            if failed:
+                with self._lock:
+                    self._pending_deletes.update(failed)
 
             for path in ready:
                 self._ingest(path)
@@ -218,23 +253,32 @@ class VaultWatcher:
     # B7 — Reconnect logic with exponential backoff
     # ------------------------------------------------------------------
 
-    def _ensure_titan_available(self) -> bool:
-        """Return True if Titan is reachable; probe with exponential backoff if not.
+    # B7 — Reconnect logic with cool-down (replaces per-call exponential backoff)
+    _COOLDOWN_SECONDS: float = 30.0
 
-        Tries 5 times with delays 1s, 2s, 4s, 8s, 16s before giving up.
-        Giving up does NOT set a permanent dead state — the next call will retry.
+    def _ensure_titan_available(self) -> bool:
+        """Return True if Titan is reachable; False if in cool-down or probe fails.
+
+        One health-check probe per call. On failure a 30-second cool-down is set
+        so that subsequent calls return False immediately without blocking the
+        worker thread. This prevents the worker from stalling for up to 31 seconds
+        (1+2+4+8+16) when multiple events are queued while Titan is down.
         """
-        for delay in (1, 2, 4, 8, 16):
-            try:
-                self.titan_client.health()
-                return True
-            except httpx.ConnectError:
-                log.warning("Titan unreachable, retrying in %ds…", delay)
-                if self._stop.wait(delay):
-                    # Stop was requested while waiting — abort gracefully.
-                    return False
-        log.error("Titan still unreachable after backoff sequence")
-        return False
+        if time.monotonic() < self._titan_dead_until:
+            # Still in cool-down — skip the probe.
+            return False
+        try:
+            self.titan_client.health()
+            self._titan_dead_until = 0.0  # Reset on success
+            return True
+        except httpx.ConnectError:
+            log.warning("Titan unreachable, cooling down for %.0fs", self._COOLDOWN_SECONDS)
+            self._titan_dead_until = time.monotonic() + self._COOLDOWN_SECONDS
+            return False
+        except Exception as exc:
+            log.warning("Titan health check failed unexpectedly: %s", exc)
+            self._titan_dead_until = time.monotonic() + self._COOLDOWN_SECONDS
+            return False
 
 
 # ---------------------------------------------------------------------------
