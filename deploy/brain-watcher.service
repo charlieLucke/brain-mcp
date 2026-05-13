@@ -1,0 +1,17 @@
+[Unit]
+Description=Brain Vault Watcher
+After=titan-service.service
+Wants=titan-service.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/charl/projects/brain-mcp
+ExecStart=/home/charl/projects/brain-mcp/.venv/bin/brain-watcher
+Restart=on-failure
+RestartSec=10
+Environment="BRAIN_VAULT_ROOT=/mnt/f/vault"
+Environment="BRAIN_TITAN_URL=http://127.0.0.1:8765"
+Environment="BRAIN_DEBOUNCE_SECONDS=30"
+
+[Install]
+WantedBy=default.target

@@ -1,6 +1,6 @@
-# PROJECT_NAME
+# brain_mcp
 
-PROJECT_DESCRIPTION
+MCP server and vault watcher that make my Obsidian notes searchable by Claude
 
 ## Setup
 
@@ -26,7 +26,7 @@ make help       # list all available commands
 ## Project Structure
 
 ```
-src/PROJECT_NAME/    Source code
+src/brain_mcp/    Source code
 tests/               Pytest tests (mirrors src/ layout)
 docs/ai/             AI agent context and plans
 .github/workflows/   CI configuration

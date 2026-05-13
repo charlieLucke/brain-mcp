@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PROJECT_NAME.main import main
+from brain_mcp.main import main
 
 
 def test_main_runs() -> None:

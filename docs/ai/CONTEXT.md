@@ -17,7 +17,7 @@
 
 ## Project Layout
 ```
-src/PROJECT_NAME/    # all source code lives here
+src/brain_mcp/    # all source code lives here
 tests/               # mirrors src/ layout
 docs/ai/             # AI agent docs
 .github/workflows/   # CI

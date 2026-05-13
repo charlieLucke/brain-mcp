@@ -9,7 +9,7 @@
 *(High-level modules and their responsibilities. Example below.)*
 
 ```
-src/PROJECT_NAME/
+src/brain_mcp/
 ├── api/          # HTTP/CLI interface layer
 ├── core/         # Domain logic
 ├── adapters/     # External service clients (DB, APIs)
