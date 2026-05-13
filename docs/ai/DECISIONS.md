@@ -3,32 +3,51 @@
 > Architecture Decision Records. Append-only. One entry per significant decision.
 > This prevents re-litigating the same questions in every new AI session.
 
-## Format
-
-```
-## YYYY-MM-DD: Short title
-**Decision:** What we decided
-**Reasoning:** Why
-**Alternatives considered:** What we rejected and why
-**Consequences:** What this implies going forward
-```
-
 ---
 
-## Initial decisions (template defaults)
+## 2026-05-13: Schemas als lokale Kopie (nicht von titan importiert)
 
-## 2026-XX-XX: Use uv as package manager
-**Decision:** uv (over pip+venv, poetry, pdm).
-**Reasoning:** 10-100x faster than pip; unified tool replacing pip, pip-tools, virtualenv, pyenv; lockfile by default; backed by Astral (same team as ruff).
-**Alternatives considered:** Poetry (slower, more config overhead, separate from venv tooling). pip+venv (no lockfile by default, manual workflow).
-**Consequences:** All dependency operations go through `uv add` / `uv remove` / `uv sync`. Never edit pyproject.toml dependencies manually.
+**Decision:** `brain_mcp/schemas.py` enthält eine lokale Kopie der Titan-API-Schemas,
+nicht einen Import aus dem `titan`-Package.
+**Reasoning:** brain-mcp soll von titan entkoppelt sein — nur über HTTP-Schnittstelle verbunden.
+Cross-Repo-Import (`brain_mcp` importiert `titan`) würde titan als Python-Dependency ziehen
+und beide Repos in Lock-Step halten.
+**Alternatives considered:** Geteiltes `titan-schemas`-Package (drittes Repo) — zu viel Overhead
+für sieben Schemas.
+**Consequences:** Bei API-Änderungen beide Seiten manuell synchronisieren. Wenn Schemas
+stark divergieren wollen: zu diesem Zeitpunkt `titan-schemas` extrahieren.
 
-## 2026-XX-XX: Use ruff for lint and format
-**Decision:** ruff replaces black + flake8 + isort + pyupgrade.
-**Reasoning:** Single tool, much faster, consistent config, actively maintained.
-**Consequences:** Don't add black, flake8, or isort as separate tools.
+## 2026-05-13: brain-mcp läuft nicht als Daemon (per-Session stdio)
 
-## 2026-XX-XX: Mypy strict mode
-**Decision:** Mypy in strict mode from day one.
-**Reasoning:** Strictness is much easier to enforce from the start than retrofit. Catches whole categories of bugs at write-time.
-**Consequences:** Every function needs full type hints. `# type: ignore` requires an inline comment explaining why.
+**Decision:** brain-mcp wird von Claude Desktop als Subprocess gestartet (stdio transport),
+kein systemd-Service.
+**Reasoning:** MCP stdio-Transport ist per-Session — Claude Desktop managed den Lifecycle.
+Ein systemd-Daemon wäre hier falsch, da MCP nicht dauerhaft lauschen muss.
+**Consequences:** `deploy/` enthält nur `brain-watcher.service`. brain-mcp hat keinen
+systemd-Unit. Deployment = Binary in `.venv/bin/brain-mcp` + JSON-Eintrag in Claude Desktop.
+
+## 2026-05-13: Wants= statt Requires= im systemd-Unit
+
+**Decision:** `brain-watcher.service` nutzt `Wants=titan-service.service`, nicht `Requires=`.
+**Reasoning:** Mit `Requires=` würde brain-watcher bei Titan-Restart mitgekillt. Die
+Reconnect-Logik im Watcher macht `Wants=` sicher: Watcher wartet mit exp. Backoff bis
+Titan wieder erreichbar ist.
+**Consequences:** Watcher überlebt Titan-Restarts. Watcher überleben auch wenn Titan gar
+nicht läuft beim Watcher-Start (events bleiben im pending-Dict bis Titan zurückkommt).
+
+## 2026-05-13: use_decompose=False als MCP-Default
+
+**Decision:** `query_knowledge` übergibt `use_decompose=False` an titan.search.
+**Reasoning:** Wie in Plan Abschnitt 7 beschrieben: Claude (Opus/Sonnet) kann Query-Decomposition
+selbst. Phi-4-Decompose im Service wäre doppelter Aufwand und zusätzliche Latenz.
+**Consequences:** CLI-Pfad (`python -m titan.search`) nutzt weiterhin `use_decompose=True` als
+Default. Nur der MCP-Pfad setzt False.
+
+## 2026-05-13: Debounce-Sekunden als injectables Setting
+
+**Decision:** `VaultWatcher.__init__` akzeptiert `debounce_seconds: float` als Parameter.
+`config.py` exponiert `BRAIN_DEBOUNCE_SECONDS` (Default 30.0).
+**Reasoning:** Tests brauchen 0.1s Debounce damit sie in <2s durchlaufen. Production nutzt 30s.
+Kein `time.sleep(35)` in Tests (war Sonnet-Befund aus Plan v1).
+**Consequences:** E2E-Fixtures können `debounce_seconds=0.1` setzen. systemd-Unit setzt
+`BRAIN_DEBOUNCE_SECONDS=30` via Environment.
