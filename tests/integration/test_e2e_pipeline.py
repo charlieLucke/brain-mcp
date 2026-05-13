@@ -1,30 +1,25 @@
 """End-to-end integration test: Note write → Watcher → Titan ingest → Search finds it.
 
-Requires:
-- Titan service running on BRAIN_TITAN_URL (default http://127.0.0.1:8765)
-- Qdrant + BGE-M3 loaded (titan-service.service active)
-
-Run with:
-    uv run pytest tests/integration/ -m integration -v
-
-The test uses a temporary vault root and short debounce (0.1s) so it runs in <5s.
-No time.sleep() for synchronisation — uses polling with a deadline.
+Uses a local mock server (pytest-httpserver) to simulate the Titan RAG service.
+This ensures the tests run completely offline and don't modify any productive
+collections or rely on hardcoded paths.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
+from werkzeug.wrappers import Request, Response
 
 from brain_mcp.titan_client import TitanClient
 from brain_mcp.watcher import VaultWatcher
 
-TITAN_URL = "http://127.0.0.1:8765"
-# Unique phrase unlikely to appear in the real index
 UNIQUE_PHRASE = "BRAIN_MCP_E2E_TEST_XYZ987654321"
 
 
@@ -38,26 +33,113 @@ def _wait_until(condition: object, timeout: float = 5.0, poll: float = 0.1) -> b
     return False
 
 
-@pytest.fixture(scope="module")
-def titan_client() -> TitanClient:
-    return TitanClient(base_url=TITAN_URL, timeout=60)
+@pytest.fixture
+def mock_titan(httpserver: Any) -> Any:
+    """Simulates the Titan service with a simple in-memory chunk store."""
+    state = {"chunks": []}
+
+    def health(request: Request) -> Response:
+        return Response(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "bge_loaded": True,
+                    "qdrant_reachable": True,
+                    "vram_used_mb": 0,
+                    "collection_name": "test",
+                    "colbert_dim": 128,
+                }
+            ),
+            mimetype="application/json",
+        )
+
+    def ingest(request: Request) -> Response:
+        data = json.loads(request.data)
+        path = data["file_path"]
+        content = Path(path).read_text(encoding="utf-8")
+
+        if "indexed: false" in content:
+            state["chunks"] = [c for c in state["chunks"] if c["source_path"] != path]
+            return Response(
+                json.dumps(
+                    {
+                        "file_path": path,
+                        "domain": None,
+                        "chunks_deleted": 1,
+                        "chunks_created": 0,
+                        "skipped_reason": "indexed:false",
+                        "latency_ms": 10,
+                    }
+                ),
+                mimetype="application/json",
+            )
+
+        # Mock successful ingest
+        state["chunks"].append(
+            {
+                "text": content,
+                "source_path": path,
+                "domain": "test",
+                "chunk_offset": 0,
+                "score": 0.99,
+                "metadata": {},
+            }
+        )
+        return Response(
+            json.dumps(
+                {
+                    "file_path": path,
+                    "domain": "test",
+                    "chunks_deleted": 0,
+                    "chunks_created": 1,
+                    "skipped_reason": None,
+                    "latency_ms": 10,
+                }
+            ),
+            mimetype="application/json",
+        )
+
+    def search(request: Request) -> Response:
+        data = json.loads(request.data)
+        query = data.get("query", "")
+        # Filter chunks that contain the query
+        res = [c for c in state["chunks"] if query in c["text"]]
+        return Response(
+            json.dumps(
+                {
+                    "query": query,
+                    "chunks": res,
+                    "sub_queries": [query],
+                    "cache_hit": False,
+                    "latency_ms": 10,
+                }
+            ),
+            mimetype="application/json",
+        )
+
+    def delete_chunks(request: Request) -> Response:
+        path = request.args.get("source_path", "")
+        state["chunks"] = [c for c in state["chunks"] if c["source_path"] != path]
+        return Response(
+            json.dumps({"source_path": str(path), "chunks_deleted": 1}), mimetype="application/json"
+        )
+
+    httpserver.expect_request("/health", method="GET").respond_with_handler(health)
+    httpserver.expect_request("/ingest/file", method="POST").respond_with_handler(ingest)
+    httpserver.expect_request("/search", method="POST").respond_with_handler(search)
+    httpserver.expect_request("/chunks", method="DELETE").respond_with_handler(delete_chunks)
+
+    return httpserver
 
 
-@pytest.fixture(scope="module")
-def titan_available(titan_client: TitanClient) -> bool:
-    try:
-        health = titan_client.health()
-        return health.status in ("ok", "degraded")
-    except httpx.ConnectError:
-        return False
+@pytest.fixture
+def titan_client(mock_titan: Any) -> TitanClient:
+    return TitanClient(base_url=mock_titan.url_for("/"), timeout=2)
 
 
 @pytest.mark.integration
-def test_full_pipeline(tmp_path: Path, titan_client: TitanClient, titan_available: bool) -> None:
+def test_full_pipeline(tmp_path: Path, titan_client: TitanClient) -> None:
     """Write note → watcher ingests → search finds it."""
-    if not titan_available:
-        pytest.skip("Titan service not reachable — skipping E2E test")
-
     vault_root = tmp_path / "vault"
     (vault_root / "notes").mkdir(parents=True)
 
@@ -74,7 +156,8 @@ def test_full_pipeline(tmp_path: Path, titan_client: TitanClient, titan_availabl
         note.write_text(
             f"---\ndomain: test\nindexed: true\n---\n"
             f"# E2E Test Note\n\n"
-            f"Unique phrase for E2E verification: {UNIQUE_PHRASE}."
+            f"Unique phrase for E2E verification: {UNIQUE_PHRASE}.",
+            encoding="utf-8",
         )
 
         # Wait until indexed (watcher fires after debounce)
@@ -95,19 +178,13 @@ def test_full_pipeline(tmp_path: Path, titan_client: TitanClient, titan_availabl
 
     finally:
         watcher.stop()
-        # Cleanup: delete test chunks (best-effort)
         with contextlib.suppress(httpx.HTTPError):
             titan_client.delete_chunks(vault_root / "notes" / "e2e_test.md")
 
 
 @pytest.mark.integration
-def test_indexed_false_clears_chunks(
-    tmp_path: Path, titan_client: TitanClient, titan_available: bool
-) -> None:
+def test_indexed_false_clears_chunks(tmp_path: Path, titan_client: TitanClient) -> None:
     """Note marked indexed:false → chunks removed from index."""
-    if not titan_available:
-        pytest.skip("Titan service not reachable — skipping E2E test")
-
     vault_root = tmp_path / "vault2"
     (vault_root / "notes").mkdir(parents=True)
 
@@ -124,7 +201,10 @@ def test_indexed_false_clears_chunks(
 
     try:
         # First: index it
-        note.write_text(f"---\ndomain: test\nindexed: true\n---\nPrivate content: {phrase_2}.")
+        note.write_text(
+            f"---\ndomain: test\nindexed: true\n---\nPrivate content: {phrase_2}.",
+            encoding="utf-8",
+        )
 
         def _found() -> bool:
             try:
@@ -136,7 +216,10 @@ def test_indexed_false_clears_chunks(
         assert _wait_until(_found, timeout=10.0), "Note not indexed initially"
 
         # Then: mark indexed:false — watcher should clear chunks
-        note.write_text(f"---\ndomain: test\nindexed: false\n---\nPrivate content: {phrase_2}.")
+        note.write_text(
+            f"---\ndomain: test\nindexed: false\n---\nPrivate content: {phrase_2}.",
+            encoding="utf-8",
+        )
 
         def _gone() -> bool:
             try:
@@ -152,11 +235,8 @@ def test_indexed_false_clears_chunks(
 
 
 @pytest.mark.integration
-def test_watcher_survives_titan_restart(tmp_path: Path, titan_available: bool) -> None:
+def test_watcher_survives_titan_restart(tmp_path: Path) -> None:
     """Watcher must not crash when Titan is temporarily unreachable."""
-    if not titan_available:
-        pytest.skip("Titan service not reachable — skipping E2E test")
-
     vault_root = tmp_path / "vault3"
     vault_root.mkdir()
 
@@ -171,7 +251,8 @@ def test_watcher_survives_titan_restart(tmp_path: Path, titan_available: bool) -
     watcher.start()
 
     note = vault_root / "note.md"
-    note.write_text("---\ndomain: test\n---\nContent")
+    note.write_text("---\ndomain: test\n---\nContent", encoding="utf-8")
+
     # Give the watcher time to attempt (and fail) the ingest
     time.sleep(1.0)
 
