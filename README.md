@@ -4,21 +4,28 @@ MCP server and vault watcher that make my Obsidian notes searchable by Claude
 
 ## Quick activation
 
-After cloning, activate the two components:
+Two systemd user services run in WSL; Claude reaches the MCP server as a
+custom connector. Full instructions: **`deploy/README.md`**.
 
-**1 — Vault watcher (WSL systemd)**
+**Services (WSL systemd)**
 
 ```bash
 mkdir -p ~/.config/systemd/user/
 ln -sf ~/projects/brain-mcp/deploy/brain-watcher.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now brain-watcher
-systemctl --user status brain-watcher
+ln -sf ~/projects/brain-mcp/deploy/brain-mcp.service ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now brain-watcher brain-mcp
 ```
 
-**2 — Claude Desktop MCP config (Windows)**
+- `brain-watcher` — watches the Obsidian vault and ingests changed notes into Titan.
+- `brain-mcp` — serves the four MCP tools over HTTP (`127.0.0.1:9100`).
 
-Edit `%APPDATA%\Claude\claude_desktop_config.json` — see `deploy/README.md` for
-the exact JSON snippet. Restart Claude Desktop and verify four brain-tools appear.
+**Claude integration**
+
+Custom connectors are connected server-side by Anthropic, so the MCP endpoint must
+be publicly reachable and authenticated. brain-mcp is exposed via Tailscale Funnel
+and protected by a GitHub OAuth proxy with a login allowlist. See `deploy/README.md`
+for the connector URL, the GitHub OAuth app, and the `.env` auth variables.
 
 ---
 

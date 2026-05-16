@@ -33,8 +33,6 @@ Der `brain`-Connector ist in Claude live und End-to-End verifiziert.
 
 ## Offen / Next steps
 
-- `deploy/README.md` ist veraltet (beschreibt noch den stdio-Weg) — auf den
-  HTTPS-Connector-/Funnel-Weg umschreiben.
 - Optional: Docker Desktop auf Windows-Autostart setzen (läuft nach Reboot sonst nicht
   → Qdrant-Container fehlt → titan-service kommt nicht hoch).
 
@@ -46,10 +44,9 @@ Der `brain`-Connector ist in Claude live und End-to-End verifiziert.
   intakter WSL2-Mirrored-Networking-Brücke. Nach einem Reboot kann sie degradiert sein
   (WSL hat nur `lo`, keine `ethX`, keine Default-Route) → Funnel liefert **502 Bad
   Gateway**. Fix: `wsl --shutdown`, dann WSL neu starten.
-- `src/brain_mcp/watcher.py` enthält einen **noch nicht committeten** PollingObserver-Fix
-  (`/mnt/`-Pfade, WSL-9p) — gehört thematisch nicht hierher, separat committen.
-- `docs/ai/plans/audit_phase1_und_2.md` ist ein ungetracktes Audit-Dokument (Opus,
-  2026-05-13) — ebenfalls noch nicht committet.
+- Vault-Ingest: Der Watcher nimmt nur `.md`-Dateien aus dem Vault auf; jede Note
+  braucht ein Frontmatter-Feld `domain:` (sonst lehnt Titan sie ab). PDFs laufen über
+  die Titan-CLI (`python -m titan.ingest`), nicht über den Watcher.
 
 ---
 

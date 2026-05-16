@@ -19,7 +19,6 @@ System produktiv und an Claude angebunden.
 
 ## Offen
 
-- [ ] `deploy/README.md` auf den HTTPS-Connector-/Funnel-Weg umschreiben
 - [ ] optional: Docker Desktop auf Windows-Autostart setzen
 
 ## Notes
@@ -28,5 +27,3 @@ System produktiv und an Claude angebunden.
 - Auth-Konfig (Secrets) in `brain-mcp/.env` (gitignored).
 - Funnel braucht intakte WSL2-Mirrored-Networking-Brücke — sonst 502 (Fix:
   `wsl --shutdown`). Details: `docs/ai/DECISIONS.md` + `HANDOFF.md` (2026-05-16).
-- Noch uncommitted/ungetrackt: `src/brain_mcp/watcher.py` (PollingObserver-Fix),
-  `docs/ai/plans/audit_phase1_und_2.md`.
