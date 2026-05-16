@@ -21,7 +21,9 @@ Der `brain`-Connector ist in Claude live und End-to-End verifiziert.
 
 ## Betriebs-Setup (läuft)
 
-- `brain-mcp.service`: HTTP auf `127.0.0.1:9100`, `enabled` + `active`.
+- `brain-mcp.service`: HTTP auf `127.0.0.1:9100`. Die Units (`titan-service`,
+  `brain-mcp`, `brain-watcher`) sind `linked` — **kein** Autostart. Start/Stopp
+  laufen über das Desktop-Skript `RAG-System.bat` (siehe DECISIONS.md 2026-05-16).
 - Auth: GitHub-OAuth-Proxy, Allowlist = `charlievincentlucke-afk`. Konfiguration in
   `brain-mcp/.env` (gitignored): `BRAIN_MCP_AUTH=github`, `BRAIN_MCP_BASE_URL`,
   `BRAIN_GITHUB_CLIENT_ID/SECRET`, `BRAIN_GITHUB_ALLOWED_LOGINS`.

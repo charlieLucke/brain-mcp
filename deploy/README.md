@@ -17,14 +17,22 @@ brain-mcp besteht aus zwei Diensten:
 - `brain-watcher` — überwacht den Vault und ingestiert geänderte Notes in Titan
 - `brain-mcp` — stellt die vier MCP-Tools per HTTP auf `127.0.0.1:9100` bereit
 
+Die Units werden als `linked` registriert — **nicht** `enabled`. Sie starten also
+**nicht** automatisch beim WSL-Boot, sondern werden bewusst über das Desktop-Skript
+`RAG-System.bat` gestartet und gestoppt. So lassen sich die Ressourcen (v. a.
+GPU-VRAM) gezielt freigeben, wenn das System nicht gebraucht wird.
+
 ```bash
-mkdir -p ~/.config/systemd/user/
-ln -sf ~/projects/brain-mcp/deploy/brain-watcher.service ~/.config/systemd/user/
-ln -sf ~/projects/brain-mcp/deploy/brain-mcp.service ~/.config/systemd/user/
+systemctl --user link ~/projects/brain-mcp/deploy/brain-watcher.service
+systemctl --user link ~/projects/brain-mcp/deploy/brain-mcp.service
 systemctl --user daemon-reload
-systemctl --user enable --now brain-watcher brain-mcp
+systemctl --user start brain-watcher brain-mcp
 systemctl --user status brain-watcher brain-mcp
 ```
+
+> `titan-service` wird analog als `linked` registriert. `systemctl --user enable`
+> würde Autostart einschalten — dann starten die Dienste nach jedem WSL-Boot von
+> selbst wieder, auch nach einem „Stop". Daher bewusst `link` statt `enable`.
 
 ---
 

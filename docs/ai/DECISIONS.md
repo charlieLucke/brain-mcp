@@ -144,3 +144,22 @@ anderen bereits auf Auth-Ebene ab (401).
   WSL2-Mirrored-Networking-Brücke (sonst 502 Bad Gateway am Funnel; Fix:
   `wsl --shutdown` + Neustart).
 - End-to-End verifiziert: `query_knowledge` aus Claude liefert Vault-Treffer.
+
+## 2026-05-16: systemd-Units `linked` statt `enabled` (Autostart aus)
+
+**Decision:** `titan-service`, `brain-mcp` und `brain-watcher` werden als
+systemd-User-Units `linked` registriert, **nicht** `enabled`. Start und Stopp laufen
+über das Desktop-Skript `RAG-System.bat`.
+**Reasoning:** Mit `enable` starten die Dienste bei jedem WSL-Boot automatisch. Da
+schon eine beliebige `wsl`-Anweisung (z. B. eine Statusabfrage) WSL hochfährt, würde
+ein „Stop" sofort wieder rückgängig gemacht — die Dienste kämen von selbst zurück
+und belegten GPU-VRAM/RAM. Mit `linked` bleiben sie nach einem Stop aus, bis sie
+explizit gestartet werden.
+**Consequences:**
+- Nach einem Windows-Neustart läuft das System nicht von selbst — `RAG-System.bat`
+  → „Starten" bringt es hoch (so gewollt).
+- `systemctl --user link <pfad>` registriert die Unit ohne Autostart; `start` /
+  `restart` funktionieren normal.
+- Achtung: `systemctl --user disable` entfernt bei ins Repo verlinkten Units auch
+  den Unit-Symlink selbst — danach `systemctl --user link` erneut ausführen.
+- `deploy/README.md` Abschnitt 1 nutzt entsprechend `link` statt `enable`.
