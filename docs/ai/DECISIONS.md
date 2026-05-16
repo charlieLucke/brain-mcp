@@ -115,3 +115,32 @@ lokale oder tailnet-private Lösung kann prinzipiell nicht funktionieren.
 - Erreichbarkeit Windows↔WSL (für lokale Tests / `tailscale` auf Windows → `localhost`
   in WSL) läuft über WSL2 Mirrored Networking — siehe titan `docs/ai/DECISIONS.md`
   (2026-05-16).
+
+## 2026-05-16: OAuth-Auth umgesetzt — GitHub-Proxy mit Allowlist, Connector live
+
+**Decision:** Die in der vorigen Entscheidung offene Claude-Anbindung ist umgesetzt.
+brain-mcp nutzt einen GitHub-OAuth-Proxy (`fastmcp` `OAuthProxy` mit GitHub-Endpoints)
+und einen eigenen Token-Verifier `GitHubAllowlistVerifier` (`src/brain_mcp/auth.py`),
+der nur GitHub-Logins aus einer Allowlist zulässt. Der Server läuft hinter
+`tailscale funnel` öffentlich; in Claude ist er als Custom Connector
+`https://charliespc.taild04050.ts.net/mcp` eingebunden.
+**Reasoning:** Claude verbindet Custom Connectors serverseitig → öffentlicher Endpoint
+nötig (Funnel). Ein öffentlicher, unauthentifizierter Vault-Server ist inakzeptabel →
+OAuth. GitHub-OAuth authentifiziert aber *jeden* GitHub-Account; da der Vault
+persönlich ist, schränkt der Allowlist-Verifier auf den Eigentümer ein und lehnt alle
+anderen bereits auf Auth-Ebene ab (401).
+**Alternatives considered:**
+- Kein User-Filter (nur GitHub-Login) — verworfen: jeder GitHub-Account käme rein.
+- Allowlist per Middleware / Pro-Tool-Check — verworfen: der Token-Verifier lehnt
+  früher ab (vor jedem Tool-Aufruf) und ist die saubere Stelle.
+**Consequences:**
+- Neues Modul `src/brain_mcp/auth.py`. Neue Settings in `config.py`: `mcp_auth`,
+  `mcp_base_url`, `github_client_id`, `github_client_secret`, `github_allowed_logins`.
+- Secrets liegen in `brain-mcp/.env` (gitignored), nicht im Repo. `.env.example`
+  dokumentiert die Variablen.
+- Auth greift nur im HTTP-Transport; stdio bleibt lokal/unauthentifiziert.
+- Betriebs-Voraussetzungen: `tailscale funnel` aktiv (persistent), GitHub-OAuth-App
+  mit Callback `https://charliespc.taild04050.ts.net/auth/callback`, intakte
+  WSL2-Mirrored-Networking-Brücke (sonst 502 Bad Gateway am Funnel; Fix:
+  `wsl --shutdown` + Neustart).
+- End-to-End verifiziert: `query_knowledge` aus Claude liefert Vault-Treffer.

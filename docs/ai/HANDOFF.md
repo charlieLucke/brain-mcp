@@ -3,51 +3,51 @@ Model: Claude Opus 4.7
 
 ## Done in this session
 
-brain-mcp um einen HTTP-Transport erweitert und den Weg zur Claude-Anbindung geklärt.
+Claude-Anbindung von brain-mcp **vollständig umgesetzt** — OAuth + Tailscale Funnel.
+Der `brain`-Connector ist in Claude live und End-to-End verifiziert.
 
-**Code-Änderungen (committed):**
-- `src/brain_mcp/config.py` — neue Settings `mcp_transport` / `mcp_host` / `mcp_port`
-- `src/brain_mcp/mcp_server.py` — `main()` startet bei `BRAIN_MCP_TRANSPORT=http` einen
-  Streamable-HTTP-Server (`mcp.run(transport="http", ...)`); Default bleibt stdio
-- `deploy/brain-mcp.service` — neuer systemd-User-Service (HTTP auf `127.0.0.1:9100`)
-- `docs/ai/` — DECISIONS / HANDOFF / CURRENT_TASK aktualisiert
+**Code-Änderungen:**
+- `src/brain_mcp/config.py` — Settings für HTTP-Transport (`mcp_transport/host/port`)
+  und OAuth (`mcp_auth`, `mcp_base_url`, `github_client_id/secret`,
+  `github_allowed_logins`)
+- `src/brain_mcp/mcp_server.py` — HTTP-Transport in `main()`; `_build_auth()` baut bei
+  `BRAIN_MCP_AUTH=github` den OAuth-Provider und übergibt ihn an `FastMCP(auth=...)`
+- `src/brain_mcp/auth.py` (neu) — GitHub-OAuth-Proxy mit `GitHubAllowlistVerifier`,
+  der nur erlaubte GitHub-Logins zulässt
+- `deploy/brain-mcp.service` — systemd-User-Service (HTTP auf `127.0.0.1:9100`)
+- `.env.example` — neue Variablen dokumentiert
 
-**Qualitätsstand:** `ruff check` + `ruff format --check` grün, `mypy` grün,
-`pytest` 38 passed (Unit-Tests, ohne integration/slow).
+**Qualitätsstand:** `ruff` + `mypy` grün, `pytest` 38 passed (Unit-Tests).
 
-**Deployment-Stand:**
-- `brain-mcp.service` installiert (Symlink in `~/.config/systemd/user/`), `enabled` und
-  `active`. Läuft als reines HTTP auf `127.0.0.1:9100`. Lokal verifiziert: MCP-
-  `initialize`-Handshake liefert `serverInfo: brain 3.2.4`.
+## Betriebs-Setup (läuft)
 
-## Wichtigste Erkenntnis: Claude-Anbindung ist noch OFFEN
+- `brain-mcp.service`: HTTP auf `127.0.0.1:9100`, `enabled` + `active`.
+- Auth: GitHub-OAuth-Proxy, Allowlist = `charlievincentlucke-afk`. Konfiguration in
+  `brain-mcp/.env` (gitignored): `BRAIN_MCP_AUTH=github`, `BRAIN_MCP_BASE_URL`,
+  `BRAIN_GITHUB_CLIENT_ID/SECRET`, `BRAIN_GITHUB_ALLOWED_LOGINS`.
+- `tailscale funnel` (persistent): `https://charliespc.taild04050.ts.net/` →
+  `http://localhost:9100`. Reset: `tailscale funnel --https=443 off`.
+- Claude-Connector-URL: `https://charliespc.taild04050.ts.net/mcp`.
+- GitHub-OAuth-App: Callback `https://charliespc.taild04050.ts.net/auth/callback`.
+- E2E verifiziert: `query_knowledge` aus Claude liefert Vault-Treffer (Score 5.71).
 
-Der Claude-Desktop-Build hat keinen Developer Mode → `mcpServers` in
-`claude_desktop_config.json` wird ignoriert. Einziger Weg ist ein *Custom Connector*.
-**Custom Connectors verbindet Anthropic serverseitig aus der Cloud** (laut Anthropic-
-Doku) — der MCP-Endpoint muss also öffentlich aus dem Internet erreichbar sein.
+## Offen / Next steps
 
-- `tailscale serve` (tailnet-privat) wurde getestet → funktioniert NICHT (Anthropic-Cloud
-  ist nicht im Tailnet) und wurde wieder entfernt.
-- **Entscheidung:** Anbindung via `tailscale funnel` + Auth-Schicht — bewusst **vertagt**,
-  noch nicht umgesetzt. Details in `DECISIONS.md` (2026-05-16).
-
-## Next concrete steps (für die Claude-Anbindung)
-
-1. **Auth-Schicht (OAuth) in brain-mcp einbauen** — Pflicht, bevor irgendetwas via Funnel
-   ins Internet geht. Ein offener, unauthentifizierter Vault-Server darf NICHT exponiert
-   werden.
-2. `tailscale funnel` für `127.0.0.1:9100` aktivieren, Connector mit der Funnel-URL in
-   Claude Desktop eintragen.
-3. `deploy/README.md` aktualisieren (beschreibt noch den veralteten stdio-Weg).
+- `deploy/README.md` ist veraltet (beschreibt noch den stdio-Weg) — auf den
+  HTTPS-Connector-/Funnel-Weg umschreiben.
+- Optional: Docker Desktop auf Windows-Autostart setzen (läuft nach Reboot sonst nicht
+  → Qdrant-Container fehlt → titan-service kommt nicht hoch).
 
 ## Notes / gotchas
 
 - Dienst-Reihenfolge: Docker Desktop → Qdrant-Container → `titan-service` → `brain-mcp`
   / `brain-watcher`. Steht die Kette nicht, geben die Tools „Titan unreachable" zurück.
+- **WSL-Netzwerk:** Der Funnel (Windows-`tailscaled`) erreicht `localhost:9100` nur bei
+  intakter WSL2-Mirrored-Networking-Brücke. Nach einem Reboot kann sie degradiert sein
+  (WSL hat nur `lo`, keine `ethX`, keine Default-Route) → Funnel liefert **502 Bad
+  Gateway**. Fix: `wsl --shutdown`, dann WSL neu starten.
 - `src/brain_mcp/watcher.py` enthält einen **noch nicht committeten** PollingObserver-Fix
-  (für `/mnt/`-Pfade auf dem WSL-9p-Filesystem) — gehört thematisch nicht zum HTTP-
-  Transport und wurde daher nicht mit-committet. Sollte separat committet werden.
+  (`/mnt/`-Pfade, WSL-9p) — gehört thematisch nicht hierher, separat committen.
 - `docs/ai/plans/audit_phase1_und_2.md` ist ein ungetracktes Audit-Dokument (Opus,
   2026-05-13) — ebenfalls noch nicht committet.
 

@@ -7,14 +7,51 @@ from pathlib import Path
 
 import httpx
 from fastmcp import FastMCP
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
+from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
 from brain_mcp.schemas import Chunk
 from brain_mcp.titan_client import TitanClient
 
 log = logging.getLogger(__name__)
 
-mcp: FastMCP = FastMCP("brain")
+
+def _build_auth() -> OAuthProxy | None:
+    """Build the OAuth provider when HTTP auth is enabled, else None.
+
+    Auth applies only to the HTTP transport; stdio is local and unauthenticated.
+    Raises if BRAIN_MCP_AUTH=github but required settings are missing.
+    """
+    if settings.mcp_transport != "http" or settings.mcp_auth != "github":
+        return None
+    allowed_logins = {
+        login.strip().lower()
+        for login in settings.github_allowed_logins.split(",")
+        if login.strip()
+    }
+    missing = [
+        name
+        for name, value in (
+            ("BRAIN_MCP_BASE_URL", settings.mcp_base_url),
+            ("BRAIN_GITHUB_CLIENT_ID", settings.github_client_id),
+            ("BRAIN_GITHUB_CLIENT_SECRET", settings.github_client_secret),
+            ("BRAIN_GITHUB_ALLOWED_LOGINS", settings.github_allowed_logins),
+        )
+        if not value
+    ]
+    if missing:
+        raise RuntimeError("BRAIN_MCP_AUTH=github requires these settings: " + ", ".join(missing))
+    log.info("OAuth enabled (GitHub), allowlist: %s", sorted(allowed_logins))
+    return build_github_auth(
+        client_id=settings.github_client_id,
+        client_secret=settings.github_client_secret,
+        base_url=settings.mcp_base_url,
+        allowed_logins=allowed_logins,
+    )
+
+
+mcp: FastMCP = FastMCP("brain", auth=_build_auth())
 _client = TitanClient(base_url=settings.titan_url)
 
 

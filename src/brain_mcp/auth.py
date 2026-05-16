@@ -1,0 +1,77 @@
+"""OAuth authentication for the brain-mcp HTTP server.
+
+Provides a GitHub OAuth proxy that restricts access to an explicit allowlist of
+GitHub logins. Used when brain-mcp runs as a public HTTP server (behind
+Tailscale Funnel) so it can be registered as a custom connector in Claude —
+custom connectors are connected server-side by Anthropic and therefore need a
+publicly reachable, authenticated endpoint.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from fastmcp.server.auth.auth import AccessToken
+from fastmcp.server.auth.oauth_proxy import OAuthProxy
+from fastmcp.server.auth.providers.github import GitHubTokenVerifier
+
+log = logging.getLogger(__name__)
+
+_GITHUB_AUTHORIZE_ENDPOINT = "https://github.com/login/oauth/authorize"
+_GITHUB_TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"
+
+
+class GitHubAllowlistVerifier(GitHubTokenVerifier):
+    """GitHub token verifier that only admits an explicit allowlist of logins.
+
+    GitHub OAuth authenticates *any* GitHub user. Since brain-mcp exposes a
+    personal knowledge vault, the authenticated GitHub login is additionally
+    checked against an allowlist; everyone else is rejected at the auth layer.
+    """
+
+    def __init__(
+        self, *, allowed_logins: set[str], required_scopes: list[str] | None = None
+    ) -> None:
+        super().__init__(required_scopes=required_scopes)
+        self._allowed_logins = {login.lower() for login in allowed_logins}
+
+    async def verify_token(self, token: str) -> AccessToken | None:
+        access_token = await super().verify_token(token)
+        if access_token is None:
+            return None
+        login = (access_token.claims or {}).get("login")
+        if not isinstance(login, str) or login.lower() not in self._allowed_logins:
+            log.warning("GitHub login %r not in allowlist — access denied", login)
+            return None
+        log.info("GitHub login %r authorized", login)
+        return access_token
+
+
+def build_github_auth(
+    *,
+    client_id: str,
+    client_secret: str,
+    base_url: str,
+    allowed_logins: set[str],
+) -> OAuthProxy:
+    """Build a GitHub OAuth proxy restricted to the given GitHub logins.
+
+    Args:
+        client_id: GitHub OAuth app client ID.
+        client_secret: GitHub OAuth app client secret.
+        base_url: Public base URL of the server (e.g. https://host.ts.net).
+        allowed_logins: GitHub logins allowed to use the server.
+    """
+    verifier = GitHubAllowlistVerifier(
+        allowed_logins=allowed_logins,
+        required_scopes=["user"],
+    )
+    return OAuthProxy(
+        upstream_authorization_endpoint=_GITHUB_AUTHORIZE_ENDPOINT,
+        upstream_token_endpoint=_GITHUB_TOKEN_ENDPOINT,
+        upstream_client_id=client_id,
+        upstream_client_secret=client_secret,
+        token_verifier=verifier,
+        base_url=base_url,
+        issuer_url=base_url,
+    )
