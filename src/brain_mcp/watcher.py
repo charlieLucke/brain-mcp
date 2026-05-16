@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 import httpx
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver
 
 from brain_mcp.config import settings
 from brain_mcp.titan_client import TitanClient
@@ -123,7 +124,8 @@ class VaultWatcher:
         # monotonic() timestamp until which Titan is considered unreachable (cool-down).
         self._titan_dead_until: float = 0.0
 
-        self._observer = Observer()
+        use_polling = str(vault_root).startswith("/mnt/")
+        self._observer = PollingObserver(timeout=2.0) if use_polling else Observer()
         self._observer.schedule(
             _VaultEventHandler(self),
             str(vault_root),
