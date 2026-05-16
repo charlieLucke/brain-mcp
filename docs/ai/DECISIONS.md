@@ -72,3 +72,46 @@ Bei langem Titan-Ausfall bleiben sie in der Queue und werden nach Recovery abgea
 Kein `time.sleep(35)` in Tests (war Sonnet-Befund aus Plan v1).
 **Consequences:** E2E-Fixtures können `debounce_seconds=0.1` setzen. systemd-Unit setzt
 `BRAIN_DEBOUNCE_SECONDS=30` via Environment.
+
+## 2026-05-16: brain-mcp als HTTP-Daemon; Claude-Anbindung via Funnel + Auth (offen)
+
+**Decision:** brain-mcp kann per `BRAIN_MCP_TRANSPORT=http` als dauerhafter
+Streamable-HTTP-Server laufen (Default bleibt `stdio`). Der neue systemd-User-Service
+`deploy/brain-mcp.service` betreibt ihn als reinen HTTP-Server auf `127.0.0.1:9100`.
+Für die Anbindung an Claude ist **Tailscale Funnel + eine Auth-Schicht (OAuth)**
+vorgesehen — dieser Teil ist Stand 2026-05-16 aber **noch nicht umgesetzt** (vertagt).
+**Reasoning:** Der installierte Claude-Desktop-Build (intern „epitaxy"/Cowork-Build)
+hat keinen Developer Mode und behandelt `claude_desktop_config.json` ausschließlich als
+Präferenzen-Datei — ein manuell eingetragener `mcpServers`-Block wird ignoriert und beim
+nächsten Speichern der App wieder entfernt. Der klassische stdio-Weg (Decision
+2026-05-13) ist mit diesem Build also nicht nutzbar; der einzige verbleibende Weg ist
+ein *Custom Connector*. Laut Anthropic-Doku verbindet Claude einen Custom Connector aber
+**serverseitig aus der Anthropic-Cloud** (gilt für claude.ai, Desktop, Cowork, Mobile) —
+der MCP-Endpoint muss daher **öffentlich aus dem Internet erreichbar** sein. Eine rein
+lokale oder tailnet-private Lösung kann prinzipiell nicht funktionieren.
+**Alternatives considered:**
+- stdio über `claude_desktop_config.json` — von diesem Build nicht unterstützt (s.o.).
+- `tailscale serve` (tailnet-privat, gültiges HTTPS-Zertifikat) — getestet, funktioniert
+  NICHT: Anthropics Cloud ist nicht im Tailnet, am Server kam keine einzige Anfrage an.
+  Wurde wieder entfernt (`tailscale serve --https=443 off`).
+- Packaging als `.mcpb`-Extension — das Bundle müsste `wsl.exe` aufrufen (Server lebt in
+  WSL, Claude Desktop unter Windows); umständlich und fragil.
+- brain-mcp in Claude Codes MCP-Config (lokal, sicher, keine Exposition) — nur in
+  Claude-Code-Sessions verfügbar, nicht im normalen Claude-Desktop-Chat. Bleibt als
+  Fallback möglich.
+**Consequences:**
+- Diese Entscheidung **ersetzt** die Decision vom 2026-05-13 („brain-mcp läuft nicht als
+  Daemon"). stdio bleibt als Default erhalten (andere MCP-Clients, lokale Tests), aber
+  für die Claude-Anbindung läuft brain-mcp als Daemon.
+- `deploy/` enthält jetzt zwei Units: `brain-watcher.service` und `brain-mcp.service`.
+- `config.py` hat neue Settings: `mcp_transport`, `mcp_host`, `mcp_port`
+  (Env: `BRAIN_MCP_TRANSPORT` / `BRAIN_MCP_HOST` / `BRAIN_MCP_PORT`).
+- **Offen / TODO vor Inbetriebnahme des Connectors:**
+  1. Auth-Schicht (OAuth) in brain-mcp einbauen — ein öffentlich erreichbarer,
+     unauthentifizierter Vault-Server darf NICHT ins Internet.
+  2. Erst danach `tailscale funnel` für `127.0.0.1:9100` aktivieren.
+  3. Connector in Claude Desktop mit der Funnel-URL eintragen.
+  4. `deploy/README.md` (Abschnitt Claude Desktop) auf diesen Weg aktualisieren.
+- Erreichbarkeit Windows↔WSL (für lokale Tests / `tailscale` auf Windows → `localhost`
+  in WSL) läuft über WSL2 Mirrored Networking — siehe titan `docs/ai/DECISIONS.md`
+  (2026-05-16).

@@ -1,3 +1,58 @@
+# Handoff – 2026-05-16
+Model: Claude Opus 4.7
+
+## Done in this session
+
+brain-mcp um einen HTTP-Transport erweitert und den Weg zur Claude-Anbindung geklärt.
+
+**Code-Änderungen (committed):**
+- `src/brain_mcp/config.py` — neue Settings `mcp_transport` / `mcp_host` / `mcp_port`
+- `src/brain_mcp/mcp_server.py` — `main()` startet bei `BRAIN_MCP_TRANSPORT=http` einen
+  Streamable-HTTP-Server (`mcp.run(transport="http", ...)`); Default bleibt stdio
+- `deploy/brain-mcp.service` — neuer systemd-User-Service (HTTP auf `127.0.0.1:9100`)
+- `docs/ai/` — DECISIONS / HANDOFF / CURRENT_TASK aktualisiert
+
+**Qualitätsstand:** `ruff check` + `ruff format --check` grün, `mypy` grün,
+`pytest` 38 passed (Unit-Tests, ohne integration/slow).
+
+**Deployment-Stand:**
+- `brain-mcp.service` installiert (Symlink in `~/.config/systemd/user/`), `enabled` und
+  `active`. Läuft als reines HTTP auf `127.0.0.1:9100`. Lokal verifiziert: MCP-
+  `initialize`-Handshake liefert `serverInfo: brain 3.2.4`.
+
+## Wichtigste Erkenntnis: Claude-Anbindung ist noch OFFEN
+
+Der Claude-Desktop-Build hat keinen Developer Mode → `mcpServers` in
+`claude_desktop_config.json` wird ignoriert. Einziger Weg ist ein *Custom Connector*.
+**Custom Connectors verbindet Anthropic serverseitig aus der Cloud** (laut Anthropic-
+Doku) — der MCP-Endpoint muss also öffentlich aus dem Internet erreichbar sein.
+
+- `tailscale serve` (tailnet-privat) wurde getestet → funktioniert NICHT (Anthropic-Cloud
+  ist nicht im Tailnet) und wurde wieder entfernt.
+- **Entscheidung:** Anbindung via `tailscale funnel` + Auth-Schicht — bewusst **vertagt**,
+  noch nicht umgesetzt. Details in `DECISIONS.md` (2026-05-16).
+
+## Next concrete steps (für die Claude-Anbindung)
+
+1. **Auth-Schicht (OAuth) in brain-mcp einbauen** — Pflicht, bevor irgendetwas via Funnel
+   ins Internet geht. Ein offener, unauthentifizierter Vault-Server darf NICHT exponiert
+   werden.
+2. `tailscale funnel` für `127.0.0.1:9100` aktivieren, Connector mit der Funnel-URL in
+   Claude Desktop eintragen.
+3. `deploy/README.md` aktualisieren (beschreibt noch den veralteten stdio-Weg).
+
+## Notes / gotchas
+
+- Dienst-Reihenfolge: Docker Desktop → Qdrant-Container → `titan-service` → `brain-mcp`
+  / `brain-watcher`. Steht die Kette nicht, geben die Tools „Titan unreachable" zurück.
+- `src/brain_mcp/watcher.py` enthält einen **noch nicht committeten** PollingObserver-Fix
+  (für `/mnt/`-Pfade auf dem WSL-9p-Filesystem) — gehört thematisch nicht zum HTTP-
+  Transport und wurde daher nicht mit-committet. Sollte separat committet werden.
+- `docs/ai/plans/audit_phase1_und_2.md` ist ein ungetracktes Audit-Dokument (Opus,
+  2026-05-13) — ebenfalls noch nicht committet.
+
+---
+
 # Handoff – 2026-05-13
 Model: Claude Sonnet 4.6
 

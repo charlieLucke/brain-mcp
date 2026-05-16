@@ -4,32 +4,27 @@
 
 ## Goal
 
-Phase 2: brain-mcp vollständig implementiert (B0–B10).
-Plan: `~/projects/titan/docs/ai/plans/plan_titan_brain_v2.md`
-Branch: `main`
-
-## Sub-steps
-
-- [x] B0: Repo aus `charlievincentlucke-afk/python-template` erstellt, deps installiert
-- [x] B1: `titan_client.py` — TitanClient mit httpx + tenacity retry
-- [x] B2: `mcp_server.py` — FastMCP Skeleton
-- [x] B3: Tool `query_knowledge` — sucht im Vault, clamped top_k ≤ 30
-- [x] B4: Tool `ingest_note` — sofortiger Re-Ingest mit Pfad-Check
-- [x] B5: Tools `list_domains` + `find_related`
-- [x] B6: `watcher.py` — VaultWatcher mit injectablem debounce (Test-Hook)
-- [x] B7: Reconnect-Logik mit exp. Backoff (1s/2s/4s/8s/16s)
-- [x] B8: `deploy/brain-watcher.service` + `deploy/README.md` (inkl. Claude Desktop Config)
-- [x] B10: Tests: unit (mock), integration (watchdog), E2E (polling, kein sleep)
-- [ ] B11: Audit-Runde (Opus) — noch ausstehend
-- [ ] Manuelle Schritte: systemd aktivieren, Claude Desktop Config setzen, E2E-Test mit echtem Titan
+System produktiv. Offen: Anbindung von brain-mcp an Claude.
 
 ## Status
 
-**B0–B10 implementiert, committed.** ruff + mypy + 33 Tests grün.
-Nächster Schritt: manuelle Aktivierung (deploy/README.md) + B11 Audit.
+- [x] Phase 2 (B0–B11): brain-mcp implementiert + auditiert
+- [x] `brain-watcher.service` läuft (systemd User-Service)
+- [x] HTTP-Transport ergänzt (`BRAIN_MCP_TRANSPORT=http`); `brain-mcp.service` läuft
+      als HTTP auf `127.0.0.1:9100` (enabled + active)
+- [ ] Claude-Anbindung — VERTAGT. Weg: `tailscale funnel` + Auth-Schicht.
+      Siehe `docs/ai/DECISIONS.md` + `HANDOFF.md` (2026-05-16).
+
+## Nächste Schritte (für die Claude-Anbindung)
+
+1. OAuth-Auth-Schicht in brain-mcp einbauen (Pflicht vor Internet-Exposition)
+2. `tailscale funnel` aktivieren, Connector in Claude Desktop eintragen
+3. `deploy/README.md` aktualisieren
 
 ## Notes
 
-- brain-mcp läuft per stdio, kein systemd-Daemon
-- `BRAIN_DEBOUNCE_SECONDS` ist injectable (Tests nutzen 0.1s)
-- Schemas sind lokale Kopie (nicht von titan importiert)
+- Custom Connectors verbindet Anthropic serverseitig → der MCP-Endpoint muss öffentlich
+  erreichbar sein; rein lokale / tailnet-private Lösungen scheiden aus.
+- brain-mcp läuft sowohl per stdio (Default) als auch als HTTP-Daemon.
+- Noch uncommitted/ungetrackt: `src/brain_mcp/watcher.py` (PollingObserver-Fix),
+  `docs/ai/plans/audit_phase1_und_2.md`.

@@ -185,9 +185,19 @@ def find_related(file_path: str, top_k: int = 5) -> str:
 
 
 def main() -> None:
-    """Run the MCP server (stdio transport)."""
+    """Run the MCP server.
+
+    Transport is selected via BRAIN_MCP_TRANSPORT:
+    - "stdio" (default): classic subprocess transport.
+    - "http": Streamable-HTTP server on BRAIN_MCP_HOST:BRAIN_MCP_PORT, so it can
+      be registered as a custom connector in Claude Desktop.
+    """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    mcp.run()
+    if settings.mcp_transport == "http":
+        log.info("Starting MCP server (http) on %s:%s", settings.mcp_host, settings.mcp_port)
+        mcp.run(transport="http", host=settings.mcp_host, port=settings.mcp_port)
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

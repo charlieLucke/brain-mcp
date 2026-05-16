@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     # Injectierbar für Tests (Tests setzen z.B. 0.1)
     debounce_seconds: float = 30.0
 
+    # MCP-Server-Transport: "stdio" (Default) oder "http" für Claude-Desktop-Connectors
+    mcp_transport: str = "stdio"
+    mcp_host: str = "127.0.0.1"
+    mcp_port: int = 9100
+
     model_config = SettingsConfigDict(env_prefix="BRAIN_", env_file=".env", extra="ignore")
 
 
