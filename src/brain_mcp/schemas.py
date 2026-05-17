@@ -56,3 +56,14 @@ class FindRelatedResponse(BaseModel):
     source_path: str
     related: list[Chunk]
     latency_ms: int
+
+
+class NoteInfo(BaseModel):
+    source_path: str
+    domain: str
+    chunk_count: int
+
+
+class NotesResponse(BaseModel):
+    notes: list[NoteInfo]
+    total: int

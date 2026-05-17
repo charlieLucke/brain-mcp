@@ -1,3 +1,41 @@
+# Handoff – 2026-05-17
+Model: Claude Opus 4.7
+
+## Done in this session
+
+**Etappe 2 — vault-admin.** Zwei neue MCP-Tools im `brain`-Server (jetzt 6 Tools).
+
+**Code-Änderungen:**
+- `src/brain_mcp/schemas.py` — neue Schemas `NoteInfo`, `NotesResponse`
+- `src/brain_mcp/titan_client.py` — `TitanClient.list_notes()` (GET /notes)
+- `src/brain_mcp/mcp_server.py` — neue Tools `list_notes` (alle indexierten Notes,
+  optional Domain-Filter) und `delete_note` (Note aus dem Index entfernen, nur
+  de-indexieren — `.md`-Datei bleibt); `ingest_note`-Docstring präzisiert (Re-Ingest
+  ersetzt alte Chunks immer)
+- `tests/test_titan_client.py`, `tests/test_mcp_tools.py` — Tests für beide
+
+**Gegenstück im titan-Repo:** neuer Endpoint `GET /notes` — siehe titan `docs/ai/`
+(2026-05-17).
+
+**Qualitätsstand:** `ruff` + `mypy --strict` grün, `pytest` 52 passed.
+
+## Betriebs-Setup
+
+`titan-service` und `brain-mcp` wurden neu gestartet — die zwei neuen Tools sind im
+Connector live. Sonst unverändert (siehe Handoff 2026-05-16).
+
+## Kontext: brain-dashboard
+
+Parallel entstand das neue Repo `~/projects/brain-dashboard` — ein Web-Control-Panel
+(Port 9200) für Status, Logs und Steuerung des RAG-Systems. Eigenes Repo mit eigener
+`docs/ai/`. Läuft als `enabled` systemd-User-Unit.
+
+## Offen / Next steps
+
+- Keine offenen Punkte aus Etappe 2.
+
+---
+
 # Handoff – 2026-05-16
 Model: Claude Opus 4.7
 

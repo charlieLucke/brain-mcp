@@ -227,3 +227,103 @@ def test_find_related_success() -> None:
         result = mcp_server.find_related(str(_VAULT_ROOT / "notes/rrf.md"))
 
     assert "BGE-M3" in result
+
+
+# ---------------------------------------------------------------------------
+# list_notes
+# ---------------------------------------------------------------------------
+
+
+def _notes_response() -> object:
+    from brain_mcp.schemas import NoteInfo, NotesResponse
+
+    return NotesResponse(
+        notes=[
+            NoteInfo(source_path="/mnt/f/vault/a.md", domain="lernen", chunk_count=3),
+            NoteInfo(source_path="/mnt/f/vault/b.md", domain="titan", chunk_count=5),
+        ],
+        total=2,
+    )
+
+
+def test_list_notes_returns_markdown() -> None:
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", return_value=_notes_response()):
+        result = mcp_server.list_notes()
+
+    assert "a.md" in result
+    assert "b.md" in result
+    assert "2 indexed note(s)" in result
+
+
+def test_list_notes_domain_filter() -> None:
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", return_value=_notes_response()):
+        result = mcp_server.list_notes(domain="titan")
+
+    assert "b.md" in result
+    assert "a.md" not in result
+
+
+def test_list_notes_empty() -> None:
+    from brain_mcp import mcp_server
+    from brain_mcp.schemas import NotesResponse
+
+    empty = NotesResponse(notes=[], total=0)
+    with patch.object(mcp_server._client, "list_notes", return_value=empty):
+        result = mcp_server.list_notes()
+
+    assert "No notes indexed" in result
+
+
+def test_list_notes_connect_error() -> None:
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", side_effect=httpx.ConnectError("refused")):
+        result = mcp_server.list_notes()
+
+    assert "not reachable" in result
+
+
+# ---------------------------------------------------------------------------
+# delete_note
+# ---------------------------------------------------------------------------
+
+
+def test_delete_note_outside_vault() -> None:
+    from brain_mcp import mcp_server
+
+    with patch("brain_mcp.mcp_server.settings") as mock_settings:
+        mock_settings.vault_root = _VAULT_ROOT
+        result = mcp_server.delete_note("/tmp/outside.md")
+
+    assert "outside the vault root" in result
+
+
+def test_delete_note_success() -> None:
+    from brain_mcp import mcp_server
+
+    with (
+        patch("brain_mcp.mcp_server.settings") as mock_settings,
+        patch.object(mcp_server._client, "delete_chunks", return_value=5),
+    ):
+        mock_settings.vault_root = _VAULT_ROOT
+        result = mcp_server.delete_note(str(_VAULT_ROOT / "note.md"))
+
+    assert "5 chunk(s) removed" in result
+    assert "not touched" in result
+
+
+def test_delete_note_not_in_index() -> None:
+    from brain_mcp import mcp_server
+
+    with (
+        patch("brain_mcp.mcp_server.settings") as mock_settings,
+        patch.object(mcp_server._client, "delete_chunks", return_value=0),
+    ):
+        mock_settings.vault_root = _VAULT_ROOT
+        result = mcp_server.delete_note(str(_VAULT_ROOT / "ghost.md"))
+
+    assert "not in the index" in result

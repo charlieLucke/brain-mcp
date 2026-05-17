@@ -163,3 +163,18 @@ explizit gestartet werden.
 - Achtung: `systemctl --user disable` entfernt bei ins Repo verlinkten Units auch
   den Unit-Symlink selbst — danach `systemctl --user link` erneut ausführen.
 - `deploy/README.md` Abschnitt 1 nutzt entsprechend `link` statt `enable`.
+
+## 2026-05-17: vault-admin als Tools in brain-mcp (kein eigener MCP-Server)
+
+**Decision:** Die Vault-Verwaltungs-Tools `list_notes` und `delete_note` werden als
+zusätzliche Tools in den bestehenden `brain`-Server aufgenommen — kein separater
+`vault-admin`-MCP-Server.
+**Reasoning:** Ein eigener MCP-Server bräuchte einen zweiten Custom Connector in Claude
+samt eigenem OAuth-Setup und Funnel. Die Tools gehören thematisch zu den vorhandenen
+Vault-Tools; sie teilen sich `TitanClient`, Config und Auth.
+**Alternatives considered:** Eigener `vault-admin`-Server — verworfen (Overhead, zweiter
+Connector, zweites OAuth).
+**Consequences:** Der `brain`-Server hat jetzt 6 Tools. `delete_note` ist rein
+de-indexierend — es entfernt nur die Chunks aus dem Index, die `.md`-Datei auf der
+Platte bleibt unangetastet. `list_notes` braucht den neuen titan-Endpoint `GET /notes`
+(siehe titan `docs/ai/DECISIONS.md`, 2026-05-17).

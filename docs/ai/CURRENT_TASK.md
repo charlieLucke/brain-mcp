@@ -16,6 +16,7 @@ System produktiv und an Claude angebunden.
 - [x] `tailscale funnel` aktiv → `https://charliespc.taild04050.ts.net/`
 - [x] Custom Connector in Claude eingetragen, OAuth-Login erfolgreich
 - [x] End-to-End verifiziert: `query_knowledge` liefert Vault-Treffer
+- [x] 2026-05-17: Etappe 2 — Tools `list_notes` + `delete_note` (brain hat 6 Tools)
 
 ## Offen
 
@@ -24,8 +25,10 @@ System produktiv und an Claude angebunden.
 ## Notes
 
 - Connector-URL: `https://charliespc.taild04050.ts.net/mcp`
+- 6 Tools: `query_knowledge`, `ingest_note`, `list_domains`, `find_related`,
+  `list_notes`, `delete_note`.
 - Auth-Konfig (Secrets) in `brain-mcp/.env` (gitignored).
 - Funnel braucht intakte WSL2-Mirrored-Networking-Brücke — sonst 502 (Fix:
   `wsl --shutdown`). Details: `docs/ai/DECISIONS.md` + `HANDOFF.md` (2026-05-16).
-- Start/Stopp über das Desktop-Skript `RAG-System.bat`; die systemd-Units sind
-  `linked` (kein Autostart) — siehe DECISIONS.md (2026-05-16).
+- Start/Stopp über das Desktop-Skript `RAG-System.bat` oder das `brain-dashboard`
+  (Web-UI, Port 9200); die systemd-Units sind `linked` (kein Autostart).

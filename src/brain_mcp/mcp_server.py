@@ -117,6 +117,9 @@ def query_knowledge(
 def ingest_note(file_path: str, force: bool = False) -> str:
     """Trigger immediate re-indexing of a note (bypasses the watcher's 30-second delay).
 
+    Re-ingesting always *replaces* the note's previous chunks — the old and new
+    versions never coexist in the index. To remove a note entirely, use delete_note().
+
     Use when:
     - You just edited a note and want it searchable immediately.
     - You suspect the index is stale for a specific note.
@@ -214,6 +217,82 @@ def find_related(file_path: str, top_k: int = 5) -> str:
         return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
 
     return _format_chunks(result.related, cache_hit=False, latency_ms=result.latency_ms)
+
+
+# ---------------------------------------------------------------------------
+# list_notes
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def list_notes(domain: str | None = None) -> str:
+    """List every note currently in the search index.
+
+    Use this to see what is indexed — to spot stale entries, confirm a file made
+    it into the index, or pick a path for delete_note() or find_related().
+
+    Args:
+        domain: Optional domain filter (e.g. "projekte"). Leave empty to list all.
+
+    Returns:
+        Markdown list of indexed notes with their domain and chunk count.
+    """
+    try:
+        result = _client.list_notes()
+    except httpx.ConnectError:
+        return (
+            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
+        )
+    except httpx.HTTPStatusError as e:
+        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+
+    notes = [n for n in result.notes if n.domain == domain] if domain else result.notes
+    if not notes:
+        return f"_No indexed notes in domain {domain!r}._" if domain else "_No notes indexed yet._"
+    lines = [
+        f"- `{n.source_path}` — domain: **{n.domain}**, {n.chunk_count} chunk(s)" for n in notes
+    ]
+    return f"{len(notes)} indexed note(s):\n" + "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# delete_note
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def delete_note(file_path: str) -> str:
+    """Remove a note from the search index (de-index only).
+
+    This deletes the note's chunks from the index. The Markdown file on disk is
+    NOT touched. Use it when a note should no longer be searchable, or to clear a
+    stale entry whose file was already deleted.
+
+    Note: editing and re-ingesting a note already replaces its old chunks
+    automatically — you only need delete_note() to remove a note entirely.
+
+    Args:
+        file_path: Absolute path to the note inside the vault.
+
+    Returns:
+        A short status message with the number of chunks removed.
+    """
+    path = Path(file_path).resolve()
+    if not path.is_relative_to(settings.vault_root):
+        return f"Error: {file_path!r} is outside the vault root ({settings.vault_root})."
+
+    try:
+        deleted = _client.delete_chunks(path)
+    except httpx.ConnectError:
+        return (
+            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
+        )
+    except httpx.HTTPStatusError as e:
+        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+
+    if deleted == 0:
+        return f"No chunks found for {path} — it was not in the index."
+    return f"De-indexed {path}: {deleted} chunk(s) removed. The file on disk was not touched."
 
 
 # ---------------------------------------------------------------------------

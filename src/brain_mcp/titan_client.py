@@ -13,6 +13,7 @@ from brain_mcp.schemas import (
     FindRelatedResponse,
     HealthResponse,
     IngestResponse,
+    NotesResponse,
     SearchResponse,
 )
 
@@ -86,6 +87,12 @@ class TitanClient:
         resp = self._client.get("/domains")
         resp.raise_for_status()
         return DomainsResponse.model_validate(resp.json())
+
+    def list_notes(self) -> NotesResponse:
+        """GET /notes — all indexed notes with their domain and chunk count."""
+        resp = self._client.get("/notes")
+        resp.raise_for_status()
+        return NotesResponse.model_validate(resp.json())
 
     @_RETRY
     def find_related(self, file_path: Path, top_k: int = 5) -> FindRelatedResponse:

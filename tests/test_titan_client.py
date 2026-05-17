@@ -69,6 +69,14 @@ _FIND_RELATED_RESPONSE = {
     "latency_ms": 30,
 }
 
+_NOTES_RESPONSE = {
+    "notes": [
+        {"source_path": "/mnt/f/vault/note.md", "domain": "lernen", "chunk_count": 3},
+        {"source_path": "/mnt/f/vault/titan.md", "domain": "titan", "chunk_count": 7},
+    ],
+    "total": 2,
+}
+
 
 @pytest.fixture()
 def client() -> TitanClient:
@@ -80,6 +88,7 @@ def client() -> TitanClient:
             ("DELETE", "/chunks"): (200, {"chunks_deleted": 2}),
             ("GET", "/domains"): (200, _DOMAINS_RESPONSE),
             ("POST", "/find_related"): (200, _FIND_RELATED_RESPONSE),
+            ("GET", "/notes"): (200, _NOTES_RESPONSE),
         }
     )
     raw = httpx.Client(base_url="http://127.0.0.1:8765", transport=transport)
@@ -121,6 +130,13 @@ def test_list_domains(client: TitanClient) -> None:
 def test_find_related(client: TitanClient) -> None:
     result = client.find_related(Path("/mnt/f/vault/note.md"))
     assert result.source_path == "/mnt/f/vault/note.md"
+
+
+def test_list_notes(client: TitanClient) -> None:
+    result = client.list_notes()
+    assert result.total == 2
+    assert result.notes[0].source_path == "/mnt/f/vault/note.md"
+    assert result.notes[1].chunk_count == 7
 
 
 def test_health_404_raises(client: TitanClient) -> None:
