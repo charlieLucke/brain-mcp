@@ -1,3 +1,39 @@
+# Handoff – 2026-05-22
+Model: Claude Opus 4.7
+
+## Done in this session
+
+**Connector-Ausfall behoben — Ursache war Infrastruktur, nicht der OAuth-Code.**
+Nach einem PC-Neustart schlug der Custom Connector mit „couldn't reach"/`start_error`
+fehl. OAuth-Code lokal verifiziert (`/mcp`→401, Discovery→200, `POST /register`→201).
+Zwei echte Ursachen gefunden und gefixt:
+
+1. **`Linger=no`** → systemd-User-Dienste sterben, sobald WSL idle wird → brain-mcp
+   weg → Funnel ins Leere. Fix: `loginctl enable-linger charl` (persistent).
+2. **`BRAIN_MCP_HOST=127.0.0.1`** → im WSL2-Mirrored-Modus von Windows/Funnel nicht
+   erreichbar (502). Fix: `BRAIN_MCP_HOST=0.0.0.0` in `deploy/brain-mcp.service`.
+   Beweis: Dashboard (`0.0.0.0:9200`) von Windows = 200, brain-mcp (`127.0.0.1:9100`)
+   = unerreichbar; nach `0.0.0.0` → Funnel 401.
+
+Außerdem: `BRAIN_GITHUB_ALLOWED_LOGINS` auf `charlieLucke` aktualisiert (GitHub-
+Umbenennung), fastmcp testweise auf 3.2.4 zurück und wieder lock-konsistent auf 3.3.1
+(war nicht die Ursache). Docs aktualisiert (deploy/README, DECISIONS, CONTEXT, dieser
+Handoff). **End-to-End verifiziert: Connector verbindet wieder, brain-Tools live.**
+
+## Betriebs-Setup (Stand heute)
+
+- brain-mcp: HTTP auf `0.0.0.0:9100`, Linger aktiv → Dienste bleiben laufen.
+- Connector-URL unverändert: `https://charliespc.taild04050.ts.net/mcp`.
+- „`linked` statt `enabled`" gilt weiter — Stop fürs Zocken bleibt bestehen; Linger
+  killt nur nicht mehr beim Idle.
+
+## Offen / Next steps
+
+- Docker Desktop war zuletzt aus → qdrant/titan unten; für echte Abfragen den RAG-
+  Stack hochfahren (Docker Desktop → qdrant → titan). Optional: Docker-Autostart.
+
+---
+
 # Handoff – 2026-05-17
 Model: Claude Opus 4.7
 

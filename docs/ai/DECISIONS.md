@@ -178,3 +178,32 @@ Connector, zweites OAuth).
 de-indexierend — es entfernt nur die Chunks aus dem Index, die `.md`-Datei auf der
 Platte bleibt unangetastet. `list_notes` braucht den neuen titan-Endpoint `GET /notes`
 (siehe titan `docs/ai/DECISIONS.md`, 2026-05-17).
+
+## 2026-05-22: Connector-Ausfall war Infrastruktur, nicht OAuth — Linger + 0.0.0.0-Bind
+
+**Decision:** Zwei betriebliche Fixes, damit der Custom Connector zuverlässig
+verbindet: (1) `loginctl enable-linger charl`, (2) `BRAIN_MCP_HOST=0.0.0.0` in
+`deploy/brain-mcp.service` (vorher `127.0.0.1`).
+**Reasoning:** Der Connector schlug mit „couldn't reach"/`start_error` fehl,
+obwohl der OAuth-Code korrekt war (lokal getestet: `/mcp`→401, Discovery→200,
+`POST /register`→201). Zwei Infrastruktur-Ursachen, beide durch einen PC-Neustart
+ausgelöst:
+- **Linger=no:** Ohne Linger beendet WSL die systemd-User-Instanz, sobald keine
+  Sitzung mehr offen ist → brain-mcp (und der ganze Stack) stirbt im Leerlauf →
+  der Funnel zeigt ins Leere. Erklärt „lief vorher, plötzlich nicht mehr".
+- **`127.0.0.1`-Bind:** Im WSL2-Mirrored-Modus ist ein loopback-only-Dienst von
+  Windows aus nicht erreichbar; der Funnel (auf Windows) bekam **502**. Beweis:
+  Dashboard (`0.0.0.0:9200`) war von Windows mit 200 erreichbar, brain-mcp
+  (`127.0.0.1:9100`) gar nicht. Nach Umstellung auf `0.0.0.0` → Funnel 401.
+**Alternatives considered:** fastmcp-Upgrade 3.2.4→3.3.1 (kein Effekt, war nicht
+die Ursache; Stand wieder lock-konsistent 3.3.1). Dual-stack `::`-Bind (laut
+titan/dashboard-Erfahrung im Mirrored-Modus kontraproduktiv) — verworfen.
+**Consequences:**
+- Linger ist persistent (übersteht Reboots). Kompatibel mit „`linked` statt
+  `enabled`": gestoppte Dienste bleiben gestoppt (Zocken-Workflow intakt), nur
+  laufende sterben nicht mehr beim Idle.
+- brain-mcp ist über `0.0.0.0` erreichbar; Zugriff weiterhin per GitHub-OAuth
+  gated. Die 502-Notiz der Decision 2026-05-16 ist damit präzisiert (häufigste
+  502-Ursache = falscher Bind, nicht die Mirrored-Brücke).
+- `BRAIN_GITHUB_ALLOWED_LOGINS` wurde im Zuge der GitHub-Umbenennung auf
+  `charlieLucke` aktualisiert (in `.env`, gitignored).

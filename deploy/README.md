@@ -15,7 +15,13 @@
 brain-mcp besteht aus zwei Diensten:
 
 - `brain-watcher` — überwacht den Vault und ingestiert geänderte Notes in Titan
-- `brain-mcp` — stellt die vier MCP-Tools per HTTP auf `127.0.0.1:9100` bereit
+- `brain-mcp` — stellt die MCP-Tools per HTTP auf `0.0.0.0:9100` bereit
+
+> **Bind-Adresse `0.0.0.0`, nicht `127.0.0.1`:** Im WSL2-Mirrored-Modus ist ein
+> nur-loopback gebundener Dienst **von Windows aus nicht erreichbar** — und der
+> Tailscale-Funnel läuft auf Windows. Mit `127.0.0.1` liefert der Funnel daher
+> **502 Bad Gateway**. Zugriff bleibt durch GitHub-OAuth abgesichert. Gesetzt via
+> `BRAIN_MCP_HOST=0.0.0.0` in `deploy/brain-mcp.service`.
 
 Die Units werden als `linked` registriert — **nicht** `enabled`. Sie starten also
 **nicht** automatisch beim WSL-Boot, sondern werden bewusst über das Desktop-Skript
@@ -33,6 +39,24 @@ systemctl --user status brain-watcher brain-mcp
 > `titan-service` wird analog als `linked` registriert. `systemctl --user enable`
 > würde Autostart einschalten — dann starten die Dienste nach jedem WSL-Boot von
 > selbst wieder, auch nach einem „Stop". Daher bewusst `link` statt `enable`.
+
+### Linger aktivieren (Pflicht)
+
+```bash
+loginctl enable-linger charl
+```
+
+Ohne Linger beendet WSL die systemd-User-Instanz (und damit **alle** laufenden
+User-Dienste), sobald die letzte WSL-Sitzung endet / die Distro im Leerlauf
+runterfährt. Folge: brain-mcp stirbt unbemerkt, der Funnel zeigt ins Leere, und
+der Claude-Connector scheitert mit „couldn't reach"/`start_error`. Mit Linger
+bleibt die User-Instanz dauerhaft aktiv.
+
+Wichtig — kein Widerspruch zu „`linked` statt `enabled`": Linger startet beim
+Boot nur **enabled** Units. Da `titan-service`/`brain-mcp`/`brain-watcher`
+`linked` (nicht enabled) sind, starten sie **nicht** automatisch — ein „Stop"
+fürs Zocken bleibt also bestehen. Linger hält nur *bereits laufende* Dienste am
+Leben, statt sie beim Idle zu killen.
 
 ---
 
@@ -72,9 +96,12 @@ tailscale funnel status
 
 Das proxyt `https://charliespc.taild04050.ts.net/` → `http://localhost:9100`.
 
-Voraussetzung: intakte WSL2-Mirrored-Networking-Brücke. Ist sie nach einem Reboot
-degradiert (WSL hat nur `lo`, keine `ethX`), liefert der Funnel **502 Bad Gateway** —
-Fix: `wsl --shutdown`, dann WSL neu starten.
+**502 Bad Gateway am Funnel?** Häufigste Ursache: brain-mcp bindet `127.0.0.1`
+statt `0.0.0.0` (s. Abschnitt 1) — dann ist es von Windows/Funnel nicht
+erreichbar. Prüfen: von Windows `iwr http://127.0.0.1:9100/mcp` → muss `401`
+liefern. Schlägt das fehl, ist der Bind falsch (oder der Dienst aus). Seltener:
+degradierte WSL2-Mirrored-Brücke (WSL hat nur `lo`, keine `ethX`) — Fix:
+`wsl --shutdown`, dann WSL neu starten.
 
 ---
 
