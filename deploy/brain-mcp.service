@@ -10,7 +10,10 @@ ExecStart=/home/charl/projects/brain-mcp/.venv/bin/brain-mcp
 Restart=on-failure
 RestartSec=10
 Environment="BRAIN_MCP_TRANSPORT=http"
-Environment="BRAIN_MCP_HOST=127.0.0.1"
+# Bind 0.0.0.0, not 127.0.0.1: under WSL2 mirrored networking a loopback-only
+# service is NOT reachable from Windows (the Tailscale Funnel runs on Windows),
+# so 127.0.0.1 makes the funnel return 502. Access stays gated by GitHub OAuth.
+Environment="BRAIN_MCP_HOST=0.0.0.0"
 Environment="BRAIN_MCP_PORT=9100"
 Environment="BRAIN_TITAN_URL=http://127.0.0.1:8765"
 Environment="BRAIN_VAULT_ROOT=/mnt/f/vault"
