@@ -1,32 +1,32 @@
 # brain-mcp — Deployment
 
-## Voraussetzungen
+## Prerequisites
 
-- WSL2 mit systemd (`/etc/wsl.conf` enthält `[boot]` / `systemd=true`)
-- Titan-Service deployt und als `titan-service.service` aktiv
-- Docker Desktop läuft (Qdrant-Container) — sonst kommt `titan-service` nicht hoch
-- Tailscale auf dem Windows-Host, Funnel für den Node freigeschaltet
-- Eine GitHub-OAuth-App (für die Connector-Authentifizierung, siehe Abschnitt 2)
+- WSL2 with systemd (`/etc/wsl.conf` contains `[boot]` / `systemd=true`)
+- The Titan service deployed and running as `titan-service.service`
+- Docker Desktop running (the Qdrant container) — otherwise `titan-service` won't start
+- Tailscale on the Windows host, with Funnel enabled for the node
+- A GitHub OAuth app (for connector authentication, see section 2)
 
 ---
 
-## 1. systemd-User-Services (WSL)
+## 1. systemd user services (WSL)
 
-brain-mcp besteht aus zwei Diensten:
+brain-mcp consists of two services:
 
-- `brain-watcher` — überwacht den Vault und ingestiert geänderte Notes in Titan
-- `brain-mcp` — stellt die MCP-Tools per HTTP auf `0.0.0.0:9100` bereit
+- `brain-watcher` — watches the vault and ingests changed notes into Titan
+- `brain-mcp` — serves the MCP tools over HTTP on `0.0.0.0:9100`
 
-> **Bind-Adresse `0.0.0.0`, nicht `127.0.0.1`:** Im WSL2-Mirrored-Modus ist ein
-> nur-loopback gebundener Dienst **von Windows aus nicht erreichbar** — und der
-> Tailscale-Funnel läuft auf Windows. Mit `127.0.0.1` liefert der Funnel daher
-> **502 Bad Gateway**. Zugriff bleibt durch GitHub-OAuth abgesichert. Gesetzt via
+> **Bind address `0.0.0.0`, not `127.0.0.1`:** under WSL2 mirrored networking a
+> loopback-only service is **unreachable from Windows** — and the Tailscale Funnel
+> runs on Windows. With `127.0.0.1` the Funnel therefore returns **502 Bad
+> Gateway**. Access stays protected by GitHub OAuth. Set via
 > `BRAIN_MCP_HOST=0.0.0.0` in `deploy/brain-mcp.service`.
 
-Die Units werden als `linked` registriert — **nicht** `enabled`. Sie starten also
-**nicht** automatisch beim WSL-Boot, sondern werden bewusst über das Desktop-Skript
-`RAG-System.bat` gestartet und gestoppt. So lassen sich die Ressourcen (v. a.
-GPU-VRAM) gezielt freigeben, wenn das System nicht gebraucht wird.
+The units are registered as `linked` — **not** `enabled`. They therefore do **not**
+start automatically at WSL boot; they are started and stopped deliberately via the
+desktop script `RAG-System.bat`. This lets you free up resources (above all GPU
+VRAM) when the system isn't needed.
 
 ```bash
 systemctl --user link ~/projects/brain-mcp/deploy/brain-watcher.service
@@ -36,101 +36,101 @@ systemctl --user start brain-watcher brain-mcp
 systemctl --user status brain-watcher brain-mcp
 ```
 
-> `titan-service` wird analog als `linked` registriert. `systemctl --user enable`
-> würde Autostart einschalten — dann starten die Dienste nach jedem WSL-Boot von
-> selbst wieder, auch nach einem „Stop". Daher bewusst `link` statt `enable`.
+> `titan-service` is registered as `linked` the same way. `systemctl --user enable`
+> would turn on autostart — then the services would come back up on their own after
+> every WSL boot, even after a "stop". Hence `link` instead of `enable` on purpose.
 
-### Linger aktivieren (Pflicht)
+### Enable linger (required)
 
 ```bash
 loginctl enable-linger charl
 ```
 
-Ohne Linger beendet WSL die systemd-User-Instanz (und damit **alle** laufenden
-User-Dienste), sobald die letzte WSL-Sitzung endet / die Distro im Leerlauf
-runterfährt. Folge: brain-mcp stirbt unbemerkt, der Funnel zeigt ins Leere, und
-der Claude-Connector scheitert mit „couldn't reach"/`start_error`. Mit Linger
-bleibt die User-Instanz dauerhaft aktiv.
+Without linger, WSL terminates the systemd user instance (and with it **all**
+running user services) as soon as the last WSL session ends / the distro shuts down
+when idle. Result: brain-mcp dies unnoticed, the Funnel points at nothing, and the
+Claude connector fails with "couldn't reach" / `start_error`. With linger the user
+instance stays active permanently.
 
-Wichtig — kein Widerspruch zu „`linked` statt `enabled`": Linger startet beim
-Boot nur **enabled** Units. Da `titan-service`/`brain-mcp`/`brain-watcher`
-`linked` (nicht enabled) sind, starten sie **nicht** automatisch — ein „Stop"
-fürs Zocken bleibt also bestehen. Linger hält nur *bereits laufende* Dienste am
-Leben, statt sie beim Idle zu killen.
+Important — no contradiction with "`linked` instead of `enabled`": linger only
+starts **enabled** units at boot. Since `titan-service` / `brain-mcp` /
+`brain-watcher` are `linked` (not enabled), they do **not** start automatically — a
+"stop" for gaming stays in effect. Linger only keeps *already running* services
+alive instead of killing them when idle.
 
 ---
 
-## 2. Auth-Konfiguration (`.env`)
+## 2. Auth configuration (`.env`)
 
-Der Server wird öffentlich erreichbar gemacht und braucht daher OAuth. Die
-Konfiguration liegt in `~/projects/brain-mcp/.env` (gitignored — niemals committen):
+The server is exposed publicly and therefore needs OAuth. The configuration lives
+in `~/projects/brain-mcp/.env` (gitignored — never commit it):
 
 ```
 BRAIN_MCP_AUTH=github
 BRAIN_MCP_BASE_URL=https://charliespc.taild04050.ts.net
 BRAIN_GITHUB_CLIENT_ID=Ov23li...
 BRAIN_GITHUB_CLIENT_SECRET=...
-BRAIN_GITHUB_ALLOWED_LOGINS=dein-github-login
+BRAIN_GITHUB_ALLOWED_LOGINS=your-github-login
 ```
 
-GitHub-OAuth-App anlegen (https://github.com/settings/developers → OAuth Apps →
+Create a GitHub OAuth app (https://github.com/settings/developers → OAuth Apps →
 New OAuth App):
 
 - **Homepage URL:** `https://charliespc.taild04050.ts.net`
 - **Authorization callback URL:** `https://charliespc.taild04050.ts.net/auth/callback`
 
-Nur GitHub-Logins aus `BRAIN_GITHUB_ALLOWED_LOGINS` werden zugelassen; alle anderen
-werden bereits auf Auth-Ebene mit 401 abgewiesen.
+Only GitHub logins listed in `BRAIN_GITHUB_ALLOWED_LOGINS` are allowed; everyone
+else is rejected with a 401 already at the auth layer.
 
 ---
 
-## 3. Öffentlich erreichbar machen — Tailscale Funnel
+## 3. Make it publicly reachable — Tailscale Funnel
 
-Claude verbindet Custom Connectors serverseitig aus der Anthropic-Cloud; der
-Endpoint muss daher öffentlich erreichbar sein. Auf dem **Windows-Host**:
+Claude connects custom connectors server-side from the Anthropic cloud, so the
+endpoint must be publicly reachable. On the **Windows host**:
 
 ```powershell
 tailscale funnel --bg http://localhost:9100
 tailscale funnel status
 ```
 
-Das proxyt `https://charliespc.taild04050.ts.net/` → `http://localhost:9100`.
+This proxies `https://charliespc.taild04050.ts.net/` → `http://localhost:9100`.
 
-**502 Bad Gateway am Funnel?** Häufigste Ursache: brain-mcp bindet `127.0.0.1`
-statt `0.0.0.0` (s. Abschnitt 1) — dann ist es von Windows/Funnel nicht
-erreichbar. Prüfen: von Windows `iwr http://127.0.0.1:9100/mcp` → muss `401`
-liefern. Schlägt das fehl, ist der Bind falsch (oder der Dienst aus). Seltener:
-degradierte WSL2-Mirrored-Brücke (WSL hat nur `lo`, keine `ethX`) — Fix:
-`wsl --shutdown`, dann WSL neu starten.
+**502 Bad Gateway at the Funnel?** Most common cause: brain-mcp is bound to
+`127.0.0.1` instead of `0.0.0.0` (see section 1) — then it isn't reachable from
+Windows / the Funnel. Check: from Windows `iwr http://127.0.0.1:9100/mcp` → must
+return `401`. If that fails, the bind is wrong (or the service is down). Less
+common: a degraded WSL2 mirrored bridge (WSL has only `lo`, no `ethX`) — fix:
+`wsl --shutdown`, then restart WSL.
 
 ---
 
-## 4. Connector in Claude Desktop eintragen
+## 4. Add the connector in Claude Desktop
 
-Einstellungen → Connectors → „Add custom connector":
+Settings → Connectors → "Add custom connector":
 
 - **URL:** `https://charliespc.taild04050.ts.net/mcp`
 
-Claude startet den OAuth-Flow → GitHub-Login (mit dem erlaubten Account) → fertig.
-Danach sind die vier Tools `query_knowledge`, `list_domains`, `ingest_note`,
-`find_related` verfügbar.
+Claude starts the OAuth flow → GitHub login (with the allowed account) → done.
+Afterwards the six tools `query_knowledge`, `find_related`, `list_domains`,
+`list_notes`, `ingest_note`, and `delete_note` are available.
 
 ---
 
-## 5. Smoke-Test
+## 5. Smoke test
 
 ```bash
-# Dienste laufen?
+# Are the services running?
 systemctl --user status brain-watcher brain-mcp
 
-# Titan erreichbar?
+# Is Titan reachable?
 curl localhost:8765/health
 
-# brain-mcp lokal — OAuth-Discovery erreichbar (erwartet: 200)?
+# brain-mcp locally — is OAuth discovery reachable (expected: 200)?
 curl -s -o /dev/null -w '%{http_code}\n' \
   http://127.0.0.1:9100/.well-known/oauth-protected-resource/mcp
 
-# /mcp ohne Token — erwartet: 401
+# /mcp without a token — expected: 401
 curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -H 'Content-Type: application/json' \
   -H 'Accept: application/json, text/event-stream' \
