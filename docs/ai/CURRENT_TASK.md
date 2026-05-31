@@ -4,31 +4,31 @@
 
 ## Goal
 
-System produktiv und an Claude angebunden.
+System in production and connected to Claude.
 
 ## Status
 
-- [x] Phase 2 (B0–B11): brain-mcp implementiert + auditiert
-- [x] `brain-watcher.service` läuft (systemd User-Service)
-- [x] HTTP-Transport (`BRAIN_MCP_TRANSPORT=http`); `brain-mcp.service` auf
+- [x] Phase 2 (B0–B11): brain-mcp implemented + audited
+- [x] `brain-watcher.service` running (systemd user service)
+- [x] HTTP transport (`BRAIN_MCP_TRANSPORT=http`); `brain-mcp.service` on
       `127.0.0.1:9100`
-- [x] OAuth-Auth: GitHub-Proxy mit Allowlist (`src/brain_mcp/auth.py`)
-- [x] `tailscale funnel` aktiv → `https://charliespc.taild04050.ts.net/`
-- [x] Custom Connector in Claude eingetragen, OAuth-Login erfolgreich
-- [x] End-to-End verifiziert: `query_knowledge` liefert Vault-Treffer
-- [x] 2026-05-17: Etappe 2 — Tools `list_notes` + `delete_note` (brain hat 6 Tools)
+- [x] OAuth auth: GitHub proxy with allowlist (`src/brain_mcp/auth.py`)
+- [x] `tailscale funnel` active → `https://charliespc.taild04050.ts.net/`
+- [x] Custom connector added in Claude, OAuth login successful
+- [x] End-to-end verified: `query_knowledge` returns vault hits
+- [x] 2026-05-17: Stage 2 — tools `list_notes` + `delete_note` (brain has 6 tools)
 
-## Offen
+## Open
 
-- [ ] optional: Docker Desktop auf Windows-Autostart setzen
+- [ ] optional: set Docker Desktop to autostart on Windows
 
 ## Notes
 
-- Connector-URL: `https://charliespc.taild04050.ts.net/mcp`
-- 6 Tools: `query_knowledge`, `ingest_note`, `list_domains`, `find_related`,
+- Connector URL: `https://charliespc.taild04050.ts.net/mcp`
+- 6 tools: `query_knowledge`, `ingest_note`, `list_domains`, `find_related`,
   `list_notes`, `delete_note`.
-- Auth-Konfig (Secrets) in `brain-mcp/.env` (gitignored).
-- Funnel braucht intakte WSL2-Mirrored-Networking-Brücke — sonst 502 (Fix:
+- Auth config (secrets) in `brain-mcp/.env` (gitignored).
+- The Funnel needs an intact WSL2 mirrored-networking bridge — otherwise 502 (fix:
   `wsl --shutdown`). Details: `docs/ai/DECISIONS.md` + `HANDOFF.md` (2026-05-16).
-- Start/Stopp über das Desktop-Skript `RAG-System.bat` oder das `brain-dashboard`
-  (Web-UI, Port 9200); die systemd-Units sind `linked` (kein Autostart).
+- Start/stop via the desktop script `RAG-System.bat` or `brain-dashboard`
+  (web UI, port 9200); the systemd units are `linked` (no autostart).

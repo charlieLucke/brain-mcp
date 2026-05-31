@@ -5,205 +5,199 @@
 
 ---
 
-## 2026-05-13: Schemas als lokale Kopie (nicht von titan importiert)
+## 2026-05-13: Schemas as a local copy (not imported from titan)
 
-**Decision:** `brain_mcp/schemas.py` enthält eine lokale Kopie der Titan-API-Schemas,
-nicht einen Import aus dem `titan`-Package.
-**Reasoning:** brain-mcp soll von titan entkoppelt sein — nur über HTTP-Schnittstelle verbunden.
-Cross-Repo-Import (`brain_mcp` importiert `titan`) würde titan als Python-Dependency ziehen
-und beide Repos in Lock-Step halten.
-**Alternatives considered:** Geteiltes `titan-schemas`-Package (drittes Repo) — zu viel Overhead
-für sieben Schemas.
-**Consequences:** Bei API-Änderungen beide Seiten manuell synchronisieren. Wenn Schemas
-stark divergieren wollen: zu diesem Zeitpunkt `titan-schemas` extrahieren.
+**Decision:** `brain_mcp/schemas.py` holds a local copy of the Titan API schemas,
+not an import from the `titan` package.
+**Reasoning:** brain-mcp should be decoupled from titan — connected only over the HTTP
+interface. A cross-repo import (`brain_mcp` importing `titan`) would pull titan in as a
+Python dependency and keep both repos in lock-step.
+**Alternatives considered:** A shared `titan-schemas` package (a third repo) — too much
+overhead for seven schemas.
+**Consequences:** On API changes, sync both sides manually. If the schemas start to
+diverge significantly: extract `titan-schemas` at that point.
 
-## 2026-05-13: brain-mcp läuft nicht als Daemon (per-Session stdio)
+## 2026-05-13: brain-mcp does not run as a daemon (per-session stdio)
 
-**Decision:** brain-mcp wird von Claude Desktop als Subprocess gestartet (stdio transport),
-kein systemd-Service.
-**Reasoning:** MCP stdio-Transport ist per-Session — Claude Desktop managed den Lifecycle.
-Ein systemd-Daemon wäre hier falsch, da MCP nicht dauerhaft lauschen muss.
-**Consequences:** `deploy/` enthält nur `brain-watcher.service`. brain-mcp hat keinen
-systemd-Unit. Deployment = Binary in `.venv/bin/brain-mcp` + JSON-Eintrag in Claude Desktop.
+**Decision:** brain-mcp is launched by Claude Desktop as a subprocess (stdio transport),
+not a systemd service.
+**Reasoning:** The MCP stdio transport is per-session — Claude Desktop manages the
+lifecycle. A systemd daemon would be wrong here, since MCP doesn't need to listen
+permanently.
+**Consequences:** `deploy/` contains only `brain-watcher.service`. brain-mcp has no
+systemd unit. Deployment = binary in `.venv/bin/brain-mcp` + a JSON entry in Claude Desktop.
 
-## 2026-05-13: Wants= statt Requires= im systemd-Unit
+## 2026-05-13: Wants= instead of Requires= in the systemd unit
 
-**Decision:** `brain-watcher.service` nutzt `Wants=titan-service.service`, nicht `Requires=`.
-**Reasoning:** Mit `Requires=` würde brain-watcher bei Titan-Restart mitgekillt. Die
-Reconnect-Logik im Watcher macht `Wants=` sicher: Watcher wartet mit exp. Backoff bis
-Titan wieder erreichbar ist.
-**Consequences:** Watcher überlebt Titan-Restarts. Watcher überleben auch wenn Titan gar
-nicht läuft beim Watcher-Start (events bleiben im pending-Dict bis Titan zurückkommt).
+**Decision:** `brain-watcher.service` uses `Wants=titan-service.service`, not `Requires=`.
+**Reasoning:** With `Requires=`, brain-watcher would be killed along with a Titan restart.
+The watcher's reconnect logic makes `Wants=` safe: the watcher waits with exponential
+backoff until Titan is reachable again.
+**Consequences:** The watcher survives Titan restarts. The watcher also survives if Titan
+isn't running at all at watcher start (events stay in the pending dict until Titan returns).
 
-## 2026-05-13: use_decompose=False als MCP-Default
+## 2026-05-13: use_decompose=False as the MCP default
 
-**Decision:** `query_knowledge` übergibt `use_decompose=False` an titan.search.
-**Reasoning:** Wie in Plan Abschnitt 7 beschrieben: Claude (Opus/Sonnet) kann Query-Decomposition
-selbst. Phi-4-Decompose im Service wäre doppelter Aufwand und zusätzliche Latenz.
-**Consequences:** CLI-Pfad (`python -m titan.search`) nutzt weiterhin `use_decompose=True` als
-Default. Nur der MCP-Pfad setzt False.
+**Decision:** `query_knowledge` passes `use_decompose=False` to titan.search.
+**Reasoning:** As described in plan section 7: Claude (Opus/Sonnet) can do query
+decomposition itself. Phi-4 decompose in the service would be duplicate effort and extra
+latency.
+**Consequences:** The CLI path (`python -m titan.search`) still uses `use_decompose=True`
+as its default. Only the MCP path sets False.
 
-## 2026-05-13: Cool-down statt Pro-Call-Backoff in _ensure_titan_available
+## 2026-05-13: Cool-down instead of per-call backoff in _ensure_titan_available
 
-**Decision:** `_ensure_titan_available` macht genau eine health()-Probe pro Aufruf.
-Bei Failure wird ein 30-Sekunden-Cool-down als `self._titan_dead_until` gesetzt;
-während des Cool-downs kehren alle weiteren Aufrufe sofort mit `False` zurück.
-**Reasoning:** Audit B-CRIT-2: Der alte Backoff (1+2+4+8+16 = 31 s pro Call) blockierte
-den Worker-Thread minutenlang wenn mehrere Events pending waren und Titan down war.
-Außerdem wurde jeder Unexpected-Error (z.B. ValidationError bei degraded-Response)
-nicht gefangen — Watcher-Crash.
-**Consequences:** Worker ist während des Cool-downs nicht blockiert. Events landen weiter
-in `_pending` und werden nach Cool-down-Ablauf normal verarbeitet.
+**Decision:** `_ensure_titan_available` makes exactly one health() probe per call.
+On failure a 30-second cool-down is set as `self._titan_dead_until`; during the cool-down
+all further calls return immediately with `False`.
+**Reasoning:** Audit B-CRIT-2: the old backoff (1+2+4+8+16 = 31 s per call) blocked the
+worker thread for minutes when several events were pending and Titan was down. Also, any
+unexpected error (e.g. ValidationError on a degraded response) wasn't caught — watcher crash.
+**Consequences:** The worker isn't blocked during the cool-down. Events keep landing in
+`_pending` and are processed normally once the cool-down expires.
 
-## 2026-05-13: Failed-Delete-Queue (_pending_deletes)
+## 2026-05-13: Failed-delete queue (_pending_deletes)
 
-**Decision:** Wenn Titan beim Delete-Event down ist, wandert der Pfad in `self._pending_deletes`.
-Der Worker-Loop verarbeitet die Queue bei jedem Tick — sobald Titan wieder erreichbar ist.
-**Reasoning:** Audit B-MED-3: Ohne Queue gingen Delete-Events verloren wenn Titan gerade
-neustartet. Der Index driftete vom Filesystem ab (gelöschte Notes blieben indexiert).
-**Consequences:** Deletes werden maximal um einen Cool-down-Zyklus (30s) verzögert.
-Bei langem Titan-Ausfall bleiben sie in der Queue und werden nach Recovery abgearbeitet.
+**Decision:** If Titan is down on a delete event, the path moves into
+`self._pending_deletes`. The worker loop processes the queue on every tick — as soon as
+Titan is reachable again.
+**Reasoning:** Audit B-MED-3: without a queue, delete events were lost when Titan was
+restarting. The index drifted from the filesystem (deleted notes stayed indexed).
+**Consequences:** Deletes are delayed by at most one cool-down cycle (30s). On a long Titan
+outage they stay in the queue and are worked off after recovery.
 
-## 2026-05-13: Debounce-Sekunden als injectables Setting
+## 2026-05-13: Debounce seconds as an injectable setting
 
-**Decision:** `VaultWatcher.__init__` akzeptiert `debounce_seconds: float` als Parameter.
-`config.py` exponiert `BRAIN_DEBOUNCE_SECONDS` (Default 30.0).
-**Reasoning:** Tests brauchen 0.1s Debounce damit sie in <2s durchlaufen. Production nutzt 30s.
-Kein `time.sleep(35)` in Tests (war Sonnet-Befund aus Plan v1).
-**Consequences:** E2E-Fixtures können `debounce_seconds=0.1` setzen. systemd-Unit setzt
+**Decision:** `VaultWatcher.__init__` accepts `debounce_seconds: float` as a parameter.
+`config.py` exposes `BRAIN_DEBOUNCE_SECONDS` (default 30.0).
+**Reasoning:** Tests need a 0.1s debounce so they finish in <2s. Production uses 30s.
+No `time.sleep(35)` in tests (was a Sonnet finding from plan v1).
+**Consequences:** E2E fixtures can set `debounce_seconds=0.1`. The systemd unit sets
 `BRAIN_DEBOUNCE_SECONDS=30` via Environment.
 
-## 2026-05-16: brain-mcp als HTTP-Daemon; Claude-Anbindung via Funnel + Auth (offen)
+## 2026-05-16: brain-mcp as an HTTP daemon; Claude integration via Funnel + auth (open)
 
-**Decision:** brain-mcp kann per `BRAIN_MCP_TRANSPORT=http` als dauerhafter
-Streamable-HTTP-Server laufen (Default bleibt `stdio`). Der neue systemd-User-Service
-`deploy/brain-mcp.service` betreibt ihn als reinen HTTP-Server auf `127.0.0.1:9100`.
-Für die Anbindung an Claude ist **Tailscale Funnel + eine Auth-Schicht (OAuth)**
-vorgesehen — dieser Teil ist Stand 2026-05-16 aber **noch nicht umgesetzt** (vertagt).
-**Reasoning:** Der installierte Claude-Desktop-Build (intern „epitaxy"/Cowork-Build)
-hat keinen Developer Mode und behandelt `claude_desktop_config.json` ausschließlich als
-Präferenzen-Datei — ein manuell eingetragener `mcpServers`-Block wird ignoriert und beim
-nächsten Speichern der App wieder entfernt. Der klassische stdio-Weg (Decision
-2026-05-13) ist mit diesem Build also nicht nutzbar; der einzige verbleibende Weg ist
-ein *Custom Connector*. Laut Anthropic-Doku verbindet Claude einen Custom Connector aber
-**serverseitig aus der Anthropic-Cloud** (gilt für claude.ai, Desktop, Cowork, Mobile) —
-der MCP-Endpoint muss daher **öffentlich aus dem Internet erreichbar** sein. Eine rein
-lokale oder tailnet-private Lösung kann prinzipiell nicht funktionieren.
+**Decision:** brain-mcp can run as a persistent Streamable-HTTP server via
+`BRAIN_MCP_TRANSPORT=http` (the default stays `stdio`). The new systemd user service
+`deploy/brain-mcp.service` runs it as a pure HTTP server on `127.0.0.1:9100`.
+For the Claude integration, **Tailscale Funnel + an auth layer (OAuth)** is planned —
+but as of 2026-05-16 that part is **not yet implemented** (deferred).
+**Reasoning:** The installed Claude Desktop build (internal "epitaxy"/Cowork build) has no
+Developer Mode and treats `claude_desktop_config.json` purely as a preferences file — a
+manually added `mcpServers` block is ignored and removed again the next time the app saves.
+So the classic stdio path (decision 2026-05-13) isn't usable with this build; the only
+remaining path is a *custom connector*. Per the Anthropic docs, Claude connects a custom
+connector **server-side from the Anthropic cloud** (true for claude.ai, Desktop, Cowork,
+Mobile) — so the MCP endpoint must be **publicly reachable from the internet**. A purely
+local or tailnet-private solution fundamentally cannot work.
 **Alternatives considered:**
-- stdio über `claude_desktop_config.json` — von diesem Build nicht unterstützt (s.o.).
-- `tailscale serve` (tailnet-privat, gültiges HTTPS-Zertifikat) — getestet, funktioniert
-  NICHT: Anthropics Cloud ist nicht im Tailnet, am Server kam keine einzige Anfrage an.
-  Wurde wieder entfernt (`tailscale serve --https=443 off`).
-- Packaging als `.mcpb`-Extension — das Bundle müsste `wsl.exe` aufrufen (Server lebt in
-  WSL, Claude Desktop unter Windows); umständlich und fragil.
-- brain-mcp in Claude Codes MCP-Config (lokal, sicher, keine Exposition) — nur in
-  Claude-Code-Sessions verfügbar, nicht im normalen Claude-Desktop-Chat. Bleibt als
-  Fallback möglich.
+- stdio via `claude_desktop_config.json` — not supported by this build (see above).
+- `tailscale serve` (tailnet-private, valid HTTPS cert) — tested, does NOT work:
+  Anthropic's cloud isn't in the tailnet, not a single request reached the server.
+  Removed again (`tailscale serve --https=443 off`).
+- Packaging as an `.mcpb` extension — the bundle would have to call `wsl.exe` (server lives
+  in WSL, Claude Desktop on Windows); cumbersome and fragile.
+- brain-mcp in Claude Code's MCP config (local, safe, no exposure) — only available in
+  Claude Code sessions, not in normal Claude Desktop chat. Remains a possible fallback.
 **Consequences:**
-- Diese Entscheidung **ersetzt** die Decision vom 2026-05-13 („brain-mcp läuft nicht als
-  Daemon"). stdio bleibt als Default erhalten (andere MCP-Clients, lokale Tests), aber
-  für die Claude-Anbindung läuft brain-mcp als Daemon.
-- `deploy/` enthält jetzt zwei Units: `brain-watcher.service` und `brain-mcp.service`.
-- `config.py` hat neue Settings: `mcp_transport`, `mcp_host`, `mcp_port`
-  (Env: `BRAIN_MCP_TRANSPORT` / `BRAIN_MCP_HOST` / `BRAIN_MCP_PORT`).
-- **Offen / TODO vor Inbetriebnahme des Connectors:**
-  1. Auth-Schicht (OAuth) in brain-mcp einbauen — ein öffentlich erreichbarer,
-     unauthentifizierter Vault-Server darf NICHT ins Internet.
-  2. Erst danach `tailscale funnel` für `127.0.0.1:9100` aktivieren.
-  3. Connector in Claude Desktop mit der Funnel-URL eintragen.
-  4. `deploy/README.md` (Abschnitt Claude Desktop) auf diesen Weg aktualisieren.
-- Erreichbarkeit Windows↔WSL (für lokale Tests / `tailscale` auf Windows → `localhost`
-  in WSL) läuft über WSL2 Mirrored Networking — siehe titan `docs/ai/DECISIONS.md`
-  (2026-05-16).
+- This decision **supersedes** the 2026-05-13 decision ("brain-mcp does not run as a
+  daemon"). stdio stays as the default (other MCP clients, local tests), but for the Claude
+  integration brain-mcp runs as a daemon.
+- `deploy/` now contains two units: `brain-watcher.service` and `brain-mcp.service`.
+- `config.py` has new settings: `mcp_transport`, `mcp_host`, `mcp_port`
+  (env: `BRAIN_MCP_TRANSPORT` / `BRAIN_MCP_HOST` / `BRAIN_MCP_PORT`).
+- **Open / TODO before putting the connector into operation:**
+  1. Build an auth layer (OAuth) into brain-mcp — a publicly reachable, unauthenticated
+     vault server must NOT go on the internet.
+  2. Only then enable `tailscale funnel` for `127.0.0.1:9100`.
+  3. Add the connector in Claude Desktop with the Funnel URL.
+  4. Update `deploy/README.md` (Claude Desktop section) to this path.
+- Windows↔WSL reachability (for local tests / `tailscale` on Windows → `localhost` in WSL)
+  goes through WSL2 mirrored networking — see titan `docs/ai/DECISIONS.md` (2026-05-16).
 
-## 2026-05-16: OAuth-Auth umgesetzt — GitHub-Proxy mit Allowlist, Connector live
+## 2026-05-16: OAuth auth implemented — GitHub proxy with allowlist, connector live
 
-**Decision:** Die in der vorigen Entscheidung offene Claude-Anbindung ist umgesetzt.
-brain-mcp nutzt einen GitHub-OAuth-Proxy (`fastmcp` `OAuthProxy` mit GitHub-Endpoints)
-und einen eigenen Token-Verifier `GitHubAllowlistVerifier` (`src/brain_mcp/auth.py`),
-der nur GitHub-Logins aus einer Allowlist zulässt. Der Server läuft hinter
-`tailscale funnel` öffentlich; in Claude ist er als Custom Connector
-`https://charliespc.taild04050.ts.net/mcp` eingebunden.
-**Reasoning:** Claude verbindet Custom Connectors serverseitig → öffentlicher Endpoint
-nötig (Funnel). Ein öffentlicher, unauthentifizierter Vault-Server ist inakzeptabel →
-OAuth. GitHub-OAuth authentifiziert aber *jeden* GitHub-Account; da der Vault
-persönlich ist, schränkt der Allowlist-Verifier auf den Eigentümer ein und lehnt alle
-anderen bereits auf Auth-Ebene ab (401).
+**Decision:** The Claude integration left open in the previous decision is implemented.
+brain-mcp uses a GitHub OAuth proxy (`fastmcp` `OAuthProxy` with GitHub endpoints) and a
+custom token verifier `GitHubAllowlistVerifier` (`src/brain_mcp/auth.py`) that only admits
+GitHub logins from an allowlist. The server runs publicly behind `tailscale funnel`; in
+Claude it is wired in as the custom connector `https://charliespc.taild04050.ts.net/mcp`.
+**Reasoning:** Claude connects custom connectors server-side → a public endpoint is needed
+(Funnel). A public, unauthenticated vault server is unacceptable → OAuth. But GitHub OAuth
+authenticates *any* GitHub account; since the vault is personal, the allowlist verifier
+restricts it to the owner and rejects everyone else already at the auth layer (401).
 **Alternatives considered:**
-- Kein User-Filter (nur GitHub-Login) — verworfen: jeder GitHub-Account käme rein.
-- Allowlist per Middleware / Pro-Tool-Check — verworfen: der Token-Verifier lehnt
-  früher ab (vor jedem Tool-Aufruf) und ist die saubere Stelle.
+- No user filter (GitHub login only) — rejected: any GitHub account would get in.
+- Allowlist via middleware / per-tool check — rejected: the token verifier rejects earlier
+  (before every tool call) and is the clean place.
 **Consequences:**
-- Neues Modul `src/brain_mcp/auth.py`. Neue Settings in `config.py`: `mcp_auth`,
+- New module `src/brain_mcp/auth.py`. New settings in `config.py`: `mcp_auth`,
   `mcp_base_url`, `github_client_id`, `github_client_secret`, `github_allowed_logins`.
-- Secrets liegen in `brain-mcp/.env` (gitignored), nicht im Repo. `.env.example`
-  dokumentiert die Variablen.
-- Auth greift nur im HTTP-Transport; stdio bleibt lokal/unauthentifiziert.
-- Betriebs-Voraussetzungen: `tailscale funnel` aktiv (persistent), GitHub-OAuth-App
-  mit Callback `https://charliespc.taild04050.ts.net/auth/callback`, intakte
-  WSL2-Mirrored-Networking-Brücke (sonst 502 Bad Gateway am Funnel; Fix:
-  `wsl --shutdown` + Neustart).
-- End-to-End verifiziert: `query_knowledge` aus Claude liefert Vault-Treffer.
+- Secrets live in `brain-mcp/.env` (gitignored), not in the repo. `.env.example` documents
+  the variables.
+- Auth applies only in HTTP transport; stdio stays local/unauthenticated.
+- Operational prerequisites: `tailscale funnel` active (persistent), a GitHub OAuth app
+  with callback `https://charliespc.taild04050.ts.net/auth/callback`, an intact
+  WSL2 mirrored-networking bridge (otherwise 502 Bad Gateway at the Funnel; fix:
+  `wsl --shutdown` + restart).
+- End-to-end verified: `query_knowledge` from Claude returns vault hits.
 
-## 2026-05-16: systemd-Units `linked` statt `enabled` (Autostart aus)
+## 2026-05-16: systemd units `linked` instead of `enabled` (autostart off)
 
-**Decision:** `titan-service`, `brain-mcp` und `brain-watcher` werden als
-systemd-User-Units `linked` registriert, **nicht** `enabled`. Start und Stopp laufen
-über das Desktop-Skript `RAG-System.bat`.
-**Reasoning:** Mit `enable` starten die Dienste bei jedem WSL-Boot automatisch. Da
-schon eine beliebige `wsl`-Anweisung (z. B. eine Statusabfrage) WSL hochfährt, würde
-ein „Stop" sofort wieder rückgängig gemacht — die Dienste kämen von selbst zurück
-und belegten GPU-VRAM/RAM. Mit `linked` bleiben sie nach einem Stop aus, bis sie
-explizit gestartet werden.
+**Decision:** `titan-service`, `brain-mcp` and `brain-watcher` are registered as systemd
+user units with `linked`, **not** `enabled`. Start and stop go through the desktop script
+`RAG-System.bat`.
+**Reasoning:** With `enable`, the services start automatically on every WSL boot. Since any
+`wsl` command (e.g. a status query) already boots WSL, a "stop" would immediately be undone
+— the services would come back on their own and consume GPU VRAM/RAM. With `linked` they
+stay off after a stop until they're started explicitly.
 **Consequences:**
-- Nach einem Windows-Neustart läuft das System nicht von selbst — `RAG-System.bat`
-  → „Starten" bringt es hoch (so gewollt).
-- `systemctl --user link <pfad>` registriert die Unit ohne Autostart; `start` /
-  `restart` funktionieren normal.
-- Achtung: `systemctl --user disable` entfernt bei ins Repo verlinkten Units auch
-  den Unit-Symlink selbst — danach `systemctl --user link` erneut ausführen.
-- `deploy/README.md` Abschnitt 1 nutzt entsprechend `link` statt `enable`.
+- After a Windows restart the system doesn't run on its own — `RAG-System.bat` → "Start"
+  brings it up (as intended).
+- `systemctl --user link <path>` registers the unit without autostart; `start` / `restart`
+  work normally.
+- Caution: for units symlinked into the repo, `systemctl --user disable` also removes the
+  unit symlink itself — afterwards run `systemctl --user link` again.
+- `deploy/README.md` section 1 uses `link` instead of `enable` accordingly.
 
-## 2026-05-17: vault-admin als Tools in brain-mcp (kein eigener MCP-Server)
+## 2026-05-17: vault-admin as tools in brain-mcp (not a separate MCP server)
 
-**Decision:** Die Vault-Verwaltungs-Tools `list_notes` und `delete_note` werden als
-zusätzliche Tools in den bestehenden `brain`-Server aufgenommen — kein separater
-`vault-admin`-MCP-Server.
-**Reasoning:** Ein eigener MCP-Server bräuchte einen zweiten Custom Connector in Claude
-samt eigenem OAuth-Setup und Funnel. Die Tools gehören thematisch zu den vorhandenen
-Vault-Tools; sie teilen sich `TitanClient`, Config und Auth.
-**Alternatives considered:** Eigener `vault-admin`-Server — verworfen (Overhead, zweiter
-Connector, zweites OAuth).
-**Consequences:** Der `brain`-Server hat jetzt 6 Tools. `delete_note` ist rein
-de-indexierend — es entfernt nur die Chunks aus dem Index, die `.md`-Datei auf der
-Platte bleibt unangetastet. `list_notes` braucht den neuen titan-Endpoint `GET /notes`
-(siehe titan `docs/ai/DECISIONS.md`, 2026-05-17).
+**Decision:** The vault-admin tools `list_notes` and `delete_note` are added as additional
+tools in the existing `brain` server — not a separate `vault-admin` MCP server.
+**Reasoning:** A separate MCP server would need a second custom connector in Claude with its
+own OAuth setup and Funnel. The tools belong thematically with the existing vault tools; they
+share `TitanClient`, config and auth.
+**Alternatives considered:** A dedicated `vault-admin` server — rejected (overhead, second
+connector, second OAuth).
+**Consequences:** The `brain` server now has 6 tools. `delete_note` is purely de-indexing —
+it only removes the chunks from the index, the `.md` file on disk stays untouched.
+`list_notes` needs the new titan endpoint `GET /notes` (see titan `docs/ai/DECISIONS.md`,
+2026-05-17).
 
-## 2026-05-22: Connector-Ausfall war Infrastruktur, nicht OAuth — Linger + 0.0.0.0-Bind
+## 2026-05-22: Connector outage was infrastructure, not OAuth — linger + 0.0.0.0 bind
 
-**Decision:** Zwei betriebliche Fixes, damit der Custom Connector zuverlässig
-verbindet: (1) `loginctl enable-linger charl`, (2) `BRAIN_MCP_HOST=0.0.0.0` in
-`deploy/brain-mcp.service` (vorher `127.0.0.1`).
-**Reasoning:** Der Connector schlug mit „couldn't reach"/`start_error` fehl,
-obwohl der OAuth-Code korrekt war (lokal getestet: `/mcp`→401, Discovery→200,
-`POST /register`→201). Zwei Infrastruktur-Ursachen, beide durch einen PC-Neustart
-ausgelöst:
-- **Linger=no:** Ohne Linger beendet WSL die systemd-User-Instanz, sobald keine
-  Sitzung mehr offen ist → brain-mcp (und der ganze Stack) stirbt im Leerlauf →
-  der Funnel zeigt ins Leere. Erklärt „lief vorher, plötzlich nicht mehr".
-- **`127.0.0.1`-Bind:** Im WSL2-Mirrored-Modus ist ein loopback-only-Dienst von
-  Windows aus nicht erreichbar; der Funnel (auf Windows) bekam **502**. Beweis:
-  Dashboard (`0.0.0.0:9200`) war von Windows mit 200 erreichbar, brain-mcp
-  (`127.0.0.1:9100`) gar nicht. Nach Umstellung auf `0.0.0.0` → Funnel 401.
-**Alternatives considered:** fastmcp-Upgrade 3.2.4→3.3.1 (kein Effekt, war nicht
-die Ursache; Stand wieder lock-konsistent 3.3.1). Dual-stack `::`-Bind (laut
-titan/dashboard-Erfahrung im Mirrored-Modus kontraproduktiv) — verworfen.
+**Decision:** Two operational fixes so the custom connector connects reliably:
+(1) `loginctl enable-linger charl`, (2) `BRAIN_MCP_HOST=0.0.0.0` in
+`deploy/brain-mcp.service` (was `127.0.0.1`).
+**Reasoning:** The connector failed with "couldn't reach" / `start_error`, even though the
+OAuth code was correct (tested locally: `/mcp`→401, discovery→200, `POST /register`→201).
+Two infrastructure causes, both triggered by a PC restart:
+- **Linger=no:** without linger, WSL terminates the systemd user instance once no session is
+  open → brain-mcp (and the whole stack) dies when idle → the Funnel points at nothing.
+  Explains "worked before, suddenly didn't".
+- **`127.0.0.1` bind:** under WSL2 mirrored networking a loopback-only service is unreachable
+  from Windows; the Funnel (on Windows) got **502**. Proof: the dashboard (`0.0.0.0:9200`)
+  was reachable from Windows with 200, brain-mcp (`127.0.0.1:9100`) not at all. After
+  switching to `0.0.0.0` → Funnel 401.
+**Alternatives considered:** fastmcp upgrade 3.2.4→3.3.1 (no effect, not the cause; back to
+lock-consistent 3.3.1). Dual-stack `::` bind (counterproductive under mirrored mode per
+titan/dashboard experience) — rejected.
 **Consequences:**
-- Linger ist persistent (übersteht Reboots). Kompatibel mit „`linked` statt
-  `enabled`": gestoppte Dienste bleiben gestoppt (Zocken-Workflow intakt), nur
-  laufende sterben nicht mehr beim Idle.
-- brain-mcp ist über `0.0.0.0` erreichbar; Zugriff weiterhin per GitHub-OAuth
-  gated. Die 502-Notiz der Decision 2026-05-16 ist damit präzisiert (häufigste
-  502-Ursache = falscher Bind, nicht die Mirrored-Brücke).
-- `BRAIN_GITHUB_ALLOWED_LOGINS` wurde im Zuge der GitHub-Umbenennung auf
-  `charlieLucke` aktualisiert (in `.env`, gitignored).
+- Linger is persistent (survives reboots). Compatible with "`linked` instead of `enabled`":
+  stopped services stay stopped (gaming workflow intact), only running ones no longer die
+  when idle.
+- brain-mcp is reachable over `0.0.0.0`; access is still gated by GitHub OAuth. The 502 note
+  of the 2026-05-16 decision is thereby refined (the most common 502 cause = wrong bind, not
+  the mirrored bridge).
+- `BRAIN_GITHUB_ALLOWED_LOGINS` was updated to `charlieLucke` in the course of the GitHub
+  rename (in `.env`, gitignored).
