@@ -1,5 +1,16 @@
 # brain-mcp — Deployment
 
+> **Placeholders:** `<your-user>` is your Linux username, `<your-tailnet-host>.ts.net`
+> is your Tailscale Funnel hostname, `<your-github-login>` is the GitHub account
+> allowed to connect. Replace them with your own (the author's host is, for example,
+> `<your-tailnet-host>.ts.net`).
+>
+> This guide describes the author's **WSL2** deployment exposing brain-mcp as a public
+> Claude custom connector. brain-mcp itself runs on any Linux, and for local use you
+> can skip sections 2–4 entirely and run it in `stdio` transport instead (no Funnel,
+> no OAuth). `RAG-System.bat` referenced below is the author's Windows start/stop
+> script — optional, not required.
+
 ## Prerequisites
 
 - WSL2 with systemd (`/etc/wsl.conf` contains `[boot]` / `systemd=true`)
@@ -43,7 +54,7 @@ systemctl --user status brain-watcher brain-mcp
 ### Enable linger (required)
 
 ```bash
-loginctl enable-linger charl
+loginctl enable-linger <your-user>
 ```
 
 Without linger, WSL terminates the systemd user instance (and with it **all**
@@ -67,7 +78,7 @@ in `~/projects/brain-mcp/.env` (gitignored — never commit it):
 
 ```
 BRAIN_MCP_AUTH=github
-BRAIN_MCP_BASE_URL=https://charliespc.taild04050.ts.net
+BRAIN_MCP_BASE_URL=https://<your-tailnet-host>.ts.net
 BRAIN_GITHUB_CLIENT_ID=Ov23li...
 BRAIN_GITHUB_CLIENT_SECRET=...
 BRAIN_GITHUB_ALLOWED_LOGINS=your-github-login
@@ -76,8 +87,8 @@ BRAIN_GITHUB_ALLOWED_LOGINS=your-github-login
 Create a GitHub OAuth app (https://github.com/settings/developers → OAuth Apps →
 New OAuth App):
 
-- **Homepage URL:** `https://charliespc.taild04050.ts.net`
-- **Authorization callback URL:** `https://charliespc.taild04050.ts.net/auth/callback`
+- **Homepage URL:** `https://<your-tailnet-host>.ts.net`
+- **Authorization callback URL:** `https://<your-tailnet-host>.ts.net/auth/callback`
 
 Only GitHub logins listed in `BRAIN_GITHUB_ALLOWED_LOGINS` are allowed; everyone
 else is rejected with a 401 already at the auth layer.
@@ -94,7 +105,7 @@ tailscale funnel --bg http://localhost:9100
 tailscale funnel status
 ```
 
-This proxies `https://charliespc.taild04050.ts.net/` → `http://localhost:9100`.
+This proxies `https://<your-tailnet-host>.ts.net/` → `http://localhost:9100`.
 
 **502 Bad Gateway at the Funnel?** Most common cause: brain-mcp is bound to
 `127.0.0.1` instead of `0.0.0.0` (see section 1) — then it isn't reachable from
@@ -109,7 +120,7 @@ common: a degraded WSL2 mirrored bridge (WSL has only `lo`, no `ethX`) — fix:
 
 Settings → Connectors → "Add custom connector":
 
-- **URL:** `https://charliespc.taild04050.ts.net/mcp`
+- **URL:** `https://<your-tailnet-host>.ts.net/mcp`
 
 Claude starts the OAuth flow → GitHub login (with the allowed account) → done.
 Afterwards the six tools `query_knowledge`, `find_related`, `list_domains`,

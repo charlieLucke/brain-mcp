@@ -1,11 +1,31 @@
 # brain_mcp
 
-MCP server and vault watcher that make my Obsidian notes searchable by Claude
+An MCP server and vault watcher that make an Obsidian vault searchable by Claude,
+backed by the **Titan** RAG service (a sibling repo).
 
-## Quick activation
+> **Placeholders:** values like `<your-user>`, `<your-tailnet-host>.ts.net` and
+> `<your-github-login>` are examples from the author's setup — replace them with
+> your own.
 
-Two systemd user services run in WSL; Claude reaches the MCP server as a
-custom connector. Full instructions: **`deploy/README.md`**.
+## Prerequisites
+
+- **Python 3.12+** and **[uv](https://docs.astral.sh/uv/)**.
+- **A running Titan service** (the RAG backend, sibling repo `titan`). brain-mcp
+  talks to it over HTTP at `BRAIN_TITAN_URL` (default `http://127.0.0.1:8765`); the
+  tools return "Titan unreachable" without it.
+- **Pick a transport:**
+  - **stdio** (default, simplest) — an MCP client launches brain-mcp as a subprocess.
+    No network exposure, no auth. Best for local use.
+  - **HTTP** (the deployed mode) — a long-lived server for a Claude *custom connector*.
+    Anthropic connects custom connectors server-side, so the endpoint must be publicly
+    reachable over HTTPS **and** authenticated. The author exposes it via a Tailscale
+    Funnel + a GitHub OAuth proxy with a login allowlist — see `deploy/README.md`.
+
+## Quick activation (the author's WSL deployment)
+
+This section is the author's specific always-on setup. Two systemd user services;
+Claude reaches the MCP server as a custom connector. Full instructions plus the
+from-zero adaptation notes are in **`deploy/README.md`**.
 
 **Services (WSL systemd)**
 
