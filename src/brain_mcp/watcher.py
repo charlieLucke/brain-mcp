@@ -13,6 +13,7 @@ Architecture:
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 import time
@@ -109,11 +110,13 @@ class VaultWatcher:
         titan_client: TitanClient,
         debounce_seconds: float = 30.0,
         poll_interval: float = 1.0,
+        skip_reconcile: bool = False,
     ) -> None:
         self.vault_root = vault_root
         self.titan_client = titan_client
         self.debounce_seconds = debounce_seconds
         self.poll_interval = poll_interval
+        self.skip_reconcile = skip_reconcile
 
         # {path: monotonic timestamp of the last event}
         self._pending: dict[Path, float] = {}
@@ -193,7 +196,16 @@ class VaultWatcher:
     # ------------------------------------------------------------------
 
     def _worker(self) -> None:
-        """Process debounced ingest events and queued deletes."""
+        """Process debounced ingest events and queued deletes.
+
+        Runs a one-shot reconcile at startup before entering the main loop.
+        """
+        if not self.skip_reconcile:
+            try:
+                self._reconcile()
+            except Exception as exc:
+                log.exception("Reconcile failed unexpectedly — continuing: %s", exc)
+
         while not self._stop.is_set():
             now = time.monotonic()
             with self._lock:
@@ -250,6 +262,61 @@ class VaultWatcher:
             log.error("HTTP %s ingesting %s: %s", exc.response.status_code, path, exc.response.text)
         except Exception as exc:
             log.exception("Unexpected error ingesting %s: %s", path, exc)
+
+    # ------------------------------------------------------------------
+    # Startup reconcile
+    # ------------------------------------------------------------------
+
+    def _reconcile(self) -> None:
+        """One-shot startup reconcile: diff vault against titan's index; re-ingest/delete delta.
+
+        Called once at the top of _worker() before the main debounce loop. Best-effort:
+        if titan is unavailable, logs and returns — the live watcher handles ongoing edits.
+        """
+        if not self._ensure_titan_available():
+            log.info("Reconcile skipped — titan not available at startup")
+            return
+
+        indexed = {n.source_path: n for n in self.titan_client.list_notes().notes}
+
+        on_disk: dict[str, Path] = {}
+        for p in self.vault_root.rglob("*.md"):
+            if _should_ignore(p, self.vault_root):
+                continue
+            on_disk[str(p.resolve())] = p
+
+        to_ingest: list[Path] = []
+        for key, p in on_disk.items():
+            if key not in indexed:
+                # On disk, not in index → ingest.
+                to_ingest.append(p)
+            else:
+                local_hash = hashlib.sha256(p.read_bytes()).hexdigest()
+                if indexed[key].content_hash != local_hash:
+                    # Hash differs (or index hash is null) → re-ingest.
+                    to_ingest.append(p)
+
+        to_delete: list[Path] = []
+        for key in indexed:
+            if key not in on_disk:
+                # In index, not on disk.
+                # Orphan-delete guard: only delete if under vault_root AND ends in .md.
+                candidate = Path(key)
+                if key.endswith(".md") and candidate.is_relative_to(self.vault_root):
+                    to_delete.append(candidate)
+
+        unchanged = len(on_disk) - len(to_ingest)
+        log.info(
+            "Reconcile: %d to ingest, %d to delete, %d unchanged",
+            len(to_ingest),
+            len(to_delete),
+            unchanged,
+        )
+
+        for p in to_ingest:
+            self._ingest(p)
+        for p in to_delete:
+            self._handle_delete(p)
 
     # ------------------------------------------------------------------
     # B7 — Reconnect logic with exponential backoff

@@ -91,6 +91,7 @@ def watcher(vault_root: Path, mock_client: MagicMock) -> VaultWatcher:
         titan_client=mock_client,
         debounce_seconds=0.05,  # fast for tests
         poll_interval=0.02,
+        skip_reconcile=True,
     )
 
 
@@ -214,6 +215,7 @@ def test_filesystem_modify_triggers_ingest(vault_root: Path, mock_client: MagicM
         titan_client=mock_client,
         debounce_seconds=0.1,
         poll_interval=0.05,
+        skip_reconcile=True,
     )
     watcher.start()
     path.write_text("---\ndomain: test\n---\nHello world")
@@ -243,6 +245,7 @@ def test_filesystem_delete_triggers_chunk_delete(vault_root: Path, mock_client: 
         titan_client=mock_client,
         debounce_seconds=0.1,
         poll_interval=0.05,
+        skip_reconcile=True,
     )
     watcher.start()
     path.unlink()
@@ -354,10 +357,119 @@ def test_non_md_file_not_ingested(vault_root: Path, mock_client: MagicMock) -> N
         titan_client=mock_client,
         debounce_seconds=0.1,
         poll_interval=0.05,
+        skip_reconcile=True,
     )
     watcher.start()
     path.write_bytes(b"%PDF-1.4 fake")
     time.sleep(0.5)
     watcher.stop()
 
+    mock_client.ingest_file.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Startup reconcile tests (plan steps 17-21)
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_ingests_missing_note(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """File on disk but not in titan's index → ingest called (plan step 17)."""
+    from brain_mcp.schemas import NotesResponse
+
+    note = vault_root / "a.md"
+    note.write_text("---\ndomain: test\n---\nHello")
+
+    mock_client.list_notes.return_value = NotesResponse(notes=[], total=0)
+    mock_client.ingest_file.return_value = _make_ingest_response(note)
+
+    watcher._reconcile()
+
+    mock_client.ingest_file.assert_called_once_with(note.resolve())
+
+
+def test_reconcile_reingests_changed_note(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """File hash in index differs from disk → re-ingest called (plan step 18)."""
+    from brain_mcp.schemas import NoteInfo, NotesResponse
+
+    note = vault_root / "a.md"
+    note.write_text("---\ndomain: test\n---\nChanged content")
+
+    stale_note = NoteInfo(
+        source_path=str(note.resolve()),
+        domain="test",
+        chunk_count=2,
+        content_hash="deadbeef" * 8,  # wrong hash (64 hex chars)
+    )
+    mock_client.list_notes.return_value = NotesResponse(notes=[stale_note], total=1)
+    mock_client.ingest_file.return_value = _make_ingest_response(note)
+
+    watcher._reconcile()
+
+    mock_client.ingest_file.assert_called_once_with(note.resolve())
+
+
+def test_reconcile_skips_unchanged_note(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """File hash matches index → ingest NOT called (plan step 19)."""
+    import hashlib
+
+    from brain_mcp.schemas import NoteInfo, NotesResponse
+
+    note = vault_root / "a.md"
+    note.write_text("---\ndomain: test\n---\nUnchanged content")
+    correct_hash = hashlib.sha256(note.read_bytes()).hexdigest()
+
+    current_note = NoteInfo(
+        source_path=str(note.resolve()),
+        domain="test",
+        chunk_count=2,
+        content_hash=correct_hash,
+    )
+    mock_client.list_notes.return_value = NotesResponse(notes=[current_note], total=1)
+
+    watcher._reconcile()
+
+    mock_client.ingest_file.assert_not_called()
+
+
+def test_reconcile_deletes_orphan(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Entry in titan's index but file gone from vault → delete_chunks called (plan step 20).
+
+    The orphan-delete guard ensures only vault .md paths are deleted.
+    """
+    from brain_mcp.schemas import NoteInfo, NotesResponse
+
+    gone_path = vault_root / "gone.md"  # does NOT exist on disk
+    orphan = NoteInfo(
+        source_path=str(gone_path.resolve()),
+        domain="test",
+        chunk_count=3,
+        content_hash="a" * 64,
+    )
+    mock_client.list_notes.return_value = NotesResponse(notes=[orphan], total=1)
+    mock_client.delete_chunks.return_value = 3
+
+    watcher._reconcile()
+
+    mock_client.delete_chunks.assert_called_once_with(gone_path.resolve())
+
+
+def test_reconcile_skips_when_titan_down(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """When titan is unreachable, list_notes and ingest_file must NOT be called (plan step 21)."""
+    import httpx
+
+    mock_client.health.side_effect = httpx.ConnectError("refused")
+
+    watcher._reconcile()
+
+    mock_client.list_notes.assert_not_called()
     mock_client.ingest_file.assert_not_called()
