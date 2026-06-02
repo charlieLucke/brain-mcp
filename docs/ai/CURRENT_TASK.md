@@ -17,6 +17,10 @@ System in production and connected to Claude.
 - [x] Custom connector added in Claude, OAuth login successful
 - [x] End-to-end verified: `query_knowledge` returns vault hits
 - [x] 2026-05-17: Stage 2 — tools `list_notes` + `delete_note` (brain has 6 tools)
+- [x] 2026-06-02: Stage 2 — brain-mcp content_hash schema and startup reconcile pass
+      Workspace plan: `docs/ai/plans/2026-06-02_vault-index-startup-reconcile.md`
+      Committed: `784cf75` (brain-mcp feat)
+      Quality gate: 57/57 tests green (incl. 5 new reconcile tests); mypy-strict green; `./workspace.sh check` green.
 
 ## Open
 
