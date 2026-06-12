@@ -120,6 +120,10 @@ class VaultWatcher:
 
         # {path: monotonic timestamp of the last event}
         self._pending: dict[Path, float] = {}
+        # Transiente Fehlversuche pro Pfad (nur vom Worker-Thread benutzt) —
+        # begrenzt das Requeue bei dauerhaften 5xx, der nächste Reconcile
+        # (Service-Neustart) fängt aufgegebene Dateien wieder ein.
+        self._retry_counts: dict[Path, int] = {}
         # Paths whose delete could not be delivered (Titan was down); retried by worker.
         self._pending_deletes: set[Path] = set()
         self._lock = threading.Lock()
@@ -231,15 +235,49 @@ class VaultWatcher:
 
             self._stop.wait(self.poll_interval)
 
+    # Obergrenze für transientes Requeue (Timeout/5xx/429) pro Datei.
+    _MAX_TRANSIENT_RETRIES: int = 5
+
+    def _reschedule_transient(self, path: Path, reason: str) -> None:
+        """Re-schedule after a transient failure, bounded per path.
+
+        Nach _MAX_TRANSIENT_RETRIES Fehlversuchen wird aufgegeben — die Datei
+        wird beim nächsten Reconcile (Watcher-Neustart) wieder aufgegriffen,
+        statt das Journal alle 30 s mit demselben Fehler zu fluten.
+        """
+        attempts = self._retry_counts.get(path, 0) + 1
+        if attempts > self._MAX_TRANSIENT_RETRIES:
+            log.error(
+                "Giving up on %s after %d transient failures (%s) — "
+                "next reconcile will pick it up again",
+                path,
+                attempts - 1,
+                reason,
+            )
+            self._retry_counts.pop(path, None)
+            return
+        self._retry_counts[path] = attempts
+        log.warning(
+            "%s ingesting %s — re-scheduling (attempt %d/%d)",
+            reason,
+            path,
+            attempts,
+            self._MAX_TRANSIENT_RETRIES,
+        )
+        self._schedule(path)
+
     def _ingest(self, path: Path) -> None:
         """Ingest a single file; re-schedule on transient error."""
         log.info("Ingesting %s", path)
         if not self._ensure_titan_available():
+            # Titan-down zählt nicht gegen das Retry-Limit: der Cool-down
+            # drosselt bereits, und ein längerer Ausfall ist kein Datei-Problem.
             log.warning("Titan unreachable — re-scheduling %s", path)
             self._schedule(path)
             return
         try:
             result = self.titan_client.ingest_file(path)
+            self._retry_counts.pop(path, None)
             if result.skipped_reason:
                 log.info(
                     "Skipped %s (%s) — %d old chunk(s) removed",
@@ -258,8 +296,17 @@ class VaultWatcher:
         except httpx.ConnectError:
             log.warning("ConnectError ingesting %s — re-scheduling", path)
             self._schedule(path)
+        except httpx.TimeoutException:
+            self._reschedule_transient(path, "Timeout")
         except httpx.HTTPStatusError as exc:
-            log.error("HTTP %s ingesting %s: %s", exc.response.status_code, path, exc.response.text)
+            status = exc.response.status_code
+            if status == 429 or status >= 500:
+                # Transient (überlastet/Server-Fehler) → bounded requeue.
+                self._reschedule_transient(path, f"HTTP {status}")
+            else:
+                # 4xx ist permanent (z.B. 422 bei fehlender domain) — Requeue
+                # würde denselben Fehler endlos wiederholen.
+                log.error("HTTP %s ingesting %s: %s", status, path, exc.response.text)
         except Exception as exc:
             log.exception("Unexpected error ingesting %s: %s", path, exc)
 

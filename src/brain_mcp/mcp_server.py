@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 
 import httpx
@@ -59,6 +61,29 @@ _client = TitanClient(base_url=settings.titan_url)
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+_TITAN_UNREACHABLE = (
+    "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
+)
+
+
+def _titan_errors[**P](func: Callable[P, str]) -> Callable[P, str]:
+    """Übersetzt Transport-Fehler des Titan-Clients in Klartext für Claude.
+
+    Jedes Tool gibt Text zurück — ein Traceback hilft dort niemandem. Vorher
+    wiederholte jeder Tool-Handler denselben try/except-Block sechsfach.
+    """
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> str:
+        try:
+            return func(*args, **kwargs)
+        except httpx.ConnectError:
+            return _TITAN_UNREACHABLE
+        except httpx.HTTPStatusError as e:
+            return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+
+    return wrapper
+
 
 def _format_chunks(chunks: list[Chunk], cache_hit: bool, latency_ms: int) -> str:
     """Format a list of Chunk objects as a Markdown string for Claude."""
@@ -79,6 +104,7 @@ def _format_chunks(chunks: list[Chunk], cache_hit: bool, latency_ms: int) -> str
 
 
 @mcp.tool()
+@_titan_errors
 def query_knowledge(
     query: str,
     domain: str | None = None,
@@ -97,14 +123,7 @@ def query_knowledge(
         Returns an error message if the Titan service is unreachable.
     """
     top_k = min(max(1, top_k), 30)
-    try:
-        result = _client.search(query, domain=domain, top_k=top_k)
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+    result = _client.search(query, domain=domain, top_k=top_k)
     return _format_chunks(result.chunks, result.cache_hit, result.latency_ms)
 
 
@@ -114,6 +133,7 @@ def query_knowledge(
 
 
 @mcp.tool()
+@_titan_errors
 def ingest_note(file_path: str, force: bool = False) -> str:
     """Trigger immediate re-indexing of a note (bypasses the watcher's 30-second delay).
 
@@ -126,7 +146,9 @@ def ingest_note(file_path: str, force: bool = False) -> str:
 
     Args:
         file_path: Absolute path to the Markdown note inside the vault.
-        force: Currently without effect — Titan always re-ingests on every call. Default False.
+        force: Titan skips re-embedding when the file bytes are unchanged
+            (content-hash match). Set True to bypass that skip and re-embed
+            anyway. Default False.
 
     Returns:
         A short status message describing what happened (chunks created/replaced,
@@ -136,15 +158,13 @@ def ingest_note(file_path: str, force: bool = False) -> str:
     if not path.is_relative_to(settings.vault_root):
         return f"Error: {file_path!r} is outside the vault root ({settings.vault_root})."
 
-    try:
-        result = _client.ingest_file(path, force=force)
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+    result = _client.ingest_file(path, force=force)
 
+    if result.skipped_reason == "unchanged":
+        return (
+            "Unchanged — the note's content hash matches the indexed version. "
+            "Use force=True to re-embed anyway."
+        )
     if result.skipped_reason:
         return f"Skipped ({result.skipped_reason}). {result.chunks_deleted} old chunk(s) removed."
     return (
@@ -160,6 +180,7 @@ def ingest_note(file_path: str, force: bool = False) -> str:
 
 
 @mcp.tool()
+@_titan_errors
 def list_domains() -> str:
     """List all domains in the knowledge vault with chunk counts.
 
@@ -169,14 +190,7 @@ def list_domains() -> str:
     Returns:
         Markdown-formatted list of domains and their chunk counts.
     """
-    try:
-        result = _client.list_domains()
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+    result = _client.list_domains()
 
     if not result.domains:
         return "_No domains indexed yet._"
@@ -190,6 +204,7 @@ def list_domains() -> str:
 
 
 @mcp.tool()
+@_titan_errors
 def find_related(file_path: str, top_k: int = 5) -> str:
     """Find notes semantically related to a given note.
 
@@ -207,15 +222,7 @@ def find_related(file_path: str, top_k: int = 5) -> str:
     if not path.is_relative_to(settings.vault_root):
         return f"Error: {file_path!r} is outside the vault root ({settings.vault_root})."
 
-    try:
-        result = _client.find_related(path, top_k=top_k)
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
-
+    result = _client.find_related(path, top_k=top_k)
     return _format_chunks(result.related, cache_hit=False, latency_ms=result.latency_ms)
 
 
@@ -225,6 +232,7 @@ def find_related(file_path: str, top_k: int = 5) -> str:
 
 
 @mcp.tool()
+@_titan_errors
 def list_notes(domain: str | None = None) -> str:
     """List every note currently in the search index.
 
@@ -237,14 +245,7 @@ def list_notes(domain: str | None = None) -> str:
     Returns:
         Markdown list of indexed notes with their domain and chunk count.
     """
-    try:
-        result = _client.list_notes()
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+    result = _client.list_notes()
 
     notes = [n for n in result.notes if n.domain == domain] if domain else result.notes
     if not notes:
@@ -261,6 +262,7 @@ def list_notes(domain: str | None = None) -> str:
 
 
 @mcp.tool()
+@_titan_errors
 def delete_note(file_path: str) -> str:
     """Remove a note from the search index (de-index only).
 
@@ -281,14 +283,7 @@ def delete_note(file_path: str) -> str:
     if not path.is_relative_to(settings.vault_root):
         return f"Error: {file_path!r} is outside the vault root ({settings.vault_root})."
 
-    try:
-        deleted = _client.delete_chunks(path)
-    except httpx.ConnectError:
-        return (
-            "Error: Titan service is not reachable. Check `systemctl --user status titan-service`."
-        )
-    except httpx.HTTPStatusError as e:
-        return f"Error: Titan service returned {e.response.status_code}: {e.response.text}"
+    deleted = _client.delete_chunks(path)
 
     if deleted == 0:
         return f"No chunks found for {path} — it was not in the index."

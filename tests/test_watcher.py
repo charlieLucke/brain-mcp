@@ -180,6 +180,66 @@ def test_ingest_reschedules_on_connect_error(
         mock_schedule.assert_called_once_with(path)
 
 
+def _http_status_error(status: int) -> Exception:
+    import httpx
+
+    request = httpx.Request("POST", "http://titan/ingest/file")
+    response = httpx.Response(status, request=request, text="boom")
+    return httpx.HTTPStatusError("error", request=request, response=response)
+
+
+def test_ingest_reschedules_on_5xx(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Transienter Server-Fehler (503) → Requeue statt Eventverlust."""
+    path = vault_root / "note.md"
+    mock_client.ingest_file.side_effect = _http_status_error(503)
+
+    with patch.object(watcher, "_schedule") as mock_schedule:
+        watcher._ingest(path)
+        mock_schedule.assert_called_once_with(path)
+
+
+def test_ingest_does_not_requeue_4xx(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Permanenter Client-Fehler (422, z.B. fehlende domain) → kein Requeue."""
+    path = vault_root / "note.md"
+    mock_client.ingest_file.side_effect = _http_status_error(422)
+
+    with patch.object(watcher, "_schedule") as mock_schedule:
+        watcher._ingest(path)
+        mock_schedule.assert_not_called()
+
+
+def test_transient_requeue_gives_up_after_max_retries(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Nach _MAX_TRANSIENT_RETRIES Fehlversuchen wird nicht mehr requeued."""
+    path = vault_root / "note.md"
+    mock_client.ingest_file.side_effect = _http_status_error(500)
+
+    with patch.object(watcher, "_schedule") as mock_schedule:
+        for _ in range(watcher._MAX_TRANSIENT_RETRIES + 1):
+            watcher._ingest(path)
+        assert mock_schedule.call_count == watcher._MAX_TRANSIENT_RETRIES
+
+
+def test_transient_retry_counter_resets_on_success(
+    watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
+) -> None:
+    """Ein Erfolg setzt den Fehlversuchs-Zähler des Pfads zurück."""
+    path = vault_root / "note.md"
+    mock_client.ingest_file.side_effect = _http_status_error(500)
+    watcher._ingest(path)
+    assert watcher._retry_counts[path] == 1
+
+    mock_client.ingest_file.side_effect = None
+    mock_client.ingest_file.return_value = _make_ingest_response(path)
+    watcher._ingest(path)
+    assert path not in watcher._retry_counts
+
+
 def test_skipped_reason_logged(
     watcher: VaultWatcher, vault_root: Path, mock_client: MagicMock
 ) -> None:

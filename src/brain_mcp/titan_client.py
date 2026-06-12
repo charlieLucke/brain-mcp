@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 
 import httpx
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from brain_mcp.schemas import (
     DomainsResponse,
@@ -19,10 +19,13 @@ from brain_mcp.schemas import (
 
 log = logging.getLogger(__name__)
 
-# Retry only on transient connection errors, not on HTTP-level errors (4xx/5xx).
+# Retry only on transient transport errors (connect/read/timeout), not on
+# HTTP-level errors (4xx/5xx). Ohne den retry=-Filter hat tenacity bisher JEDE
+# Exception retried — auch ein 422 wurde dreimal mit Backoff wiederholt.
 _RETRY = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(min=1, max=4),
+    retry=retry_if_exception_type(httpx.TransportError),
     reraise=True,
 )
 
