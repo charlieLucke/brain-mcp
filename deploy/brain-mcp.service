@@ -5,8 +5,8 @@ Wants=titan-service.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/charl/projects/brain-mcp
-ExecStart=/home/charl/projects/brain-mcp/.venv/bin/brain-mcp
+WorkingDirectory=/home/<your-user>/projects/brain-mcp
+ExecStart=/home/<your-user>/projects/brain-mcp/.venv/bin/brain-mcp
 Restart=on-failure
 RestartSec=10
 Environment="BRAIN_MCP_TRANSPORT=http"
