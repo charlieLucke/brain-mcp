@@ -1,85 +1,102 @@
-# brain_mcp
+# brain-mcp
 
-Ein MCP-Server und Vault-Watcher, die einen Obsidian-Vault für Claude durchsuchbar
-machen — gestützt auf den **Titan**-RAG-Service (ein Schwester-Repo).
+**Ein MCP-Server, der ein lokales RAG-Backend als authentifizierten Custom
+Connector an Claude anbindet — plus ein Vault-Watcher, der einen Obsidian-Vault
+automatisch durchsuchbar hält.**
 
-> **Platzhalter:** Werte wie `<your-user>`, `<your-tailnet-host>.ts.net` und
-> `<your-github-login>` sind Beispiele aus dem Setup des Autors — ersetze sie durch
-> deine eigenen.
+Über das [Model Context Protocol](https://modelcontextprotocol.io) (MCP) kann
+Claude externe Werkzeuge aufrufen. brain-mcp stellt sechs solcher Werkzeuge bereit
+und beantwortet sie aus
+**[titan](https://github.com/charlieLucke/titan)** — dem lokalen RAG-System
+(separates Repo), das die eigentliche semantische Suche über den Vault übernimmt.
+
+## Was es macht
+
+```mermaid
+flowchart LR
+    OIW["obsidian-inbox-watcher<br/>Dokumente → Notizen"]
+    T["titan<br/>RAG-Engine (Index + Suche)"]
+    BM["brain-mcp<br/>MCP-Server für Claude"]
+    C(("Claude"))
+    OIW -->|".md-Notizen"| T
+    BM -->|"HTTP: /search, /ingest"| T
+    C <-->|"MCP-Tools"| BM
+    classDef here fill:#2b6cb0,stroke:#1a365d,color:#fff,stroke-width:2px;
+    class BM here
+```
+
+brain-mcp besteht aus zwei Diensten:
+
+- **brain-watcher** — überwacht den Obsidian-Vault, erkennt geänderte Notizen
+  (mit 30-Sekunden-Debounce + Reconnect-Logik) und reicht sie an titan zur
+  Neuindexierung weiter. So bleibt der Suchindex ohne manuelles Zutun aktuell.
+- **brain-mcp** — der MCP-Server selbst, der Claude die folgenden Werkzeuge anbietet.
+
+### MCP-Werkzeuge (die nach außen sichtbare Funktionalität)
+
+| Werkzeug | Zweck |
+|---|---|
+| `query_knowledge` | Den Vault in natürlicher Sprache durchsuchen (optionaler `domain`-Filter, `top_k`). |
+| `find_related` | Notizen finden, die einer gegebenen Notiz semantisch verwandt sind. |
+| `list_domains` | Alle Wissensbereiche (Domains) im Index mit ihrer Chunk-Anzahl auflisten. |
+| `list_notes` | Jede indexierte Notiz auflisten, mit Domain + Chunk-Anzahl. |
+| `ingest_note` | Eine Notiz sofort neu indexieren, unter Umgehung der Watcher-Verzögerung. |
+| `delete_note` | Eine Notiz de-indexieren (entfernt nur ihre Chunks; die Datei auf der Platte bleibt). |
+
+## Deployment & Sicherheit (das technisch Interessante)
+
+Claude verbindet *Custom Connectors* serverseitig aus der Anthropic-Cloud — der
+Endpunkt muss also **öffentlich über HTTPS erreichbar und authentifiziert** sein.
+Die Lösung kombiniert mehrere Bausteine, die zusammen ein realistisches,
+abgesichertes Self-Hosting demonstrieren:
+
+- **Tailscale Funnel** stellt den lokal laufenden Dienst unter einem öffentlichen
+  HTTPS-Hostnamen bereit, ohne Ports im Router zu öffnen.
+- **GitHub-OAuth-Proxy mit Login-Allowlist** (`src/brain_mcp/auth.py`): Jeder
+  Request wird über OAuth authentifiziert, und nur explizit erlaubte GitHub-Konten
+  kommen durch — alle anderen werden bereits auf der Auth-Ebene mit 401 abgewiesen.
+- **WSL2-Netzwerk-Detail:** Der Server bindet bewusst an `0.0.0.0` statt
+  `127.0.0.1`, weil ein reiner Loopback-Dienst unter WSL2 Mirrored Networking von
+  der Windows-seitigen Funnel aus unerreichbar ist (sonst 502). Der Zugriff bleibt
+  durch OAuth geschützt.
+- Betrieb als **systemd-User-Services** mit aktivem Linger, sodass die Dienste
+  unabhängig von einer offenen Login-Sitzung weiterlaufen.
+
+Vollständige Schritt-für-Schritt-Anleitung: **[`deploy/README.de.md`](deploy/README.de.md)**.
+
+## Teil eines größeren Systems
+
+- **[obsidian-inbox-watcher](https://github.com/charlieLucke/obsidian-inbox-watcher)** —
+  verwandelt eingeworfene PDFs/DOCX/URLs mit einem LLM in strukturierte Notizen.
+- **[titan](https://github.com/charlieLucke/titan)** — die RAG-Engine
+  (Indexierung + hybride Suche über Qdrant).
+- **brain-mcp** *(du bist hier)* — bindet titan über MCP an Claude an.
+
+## Transport-Modi
+
+- **stdio** (Default, am einfachsten) — ein MCP-Client startet brain-mcp als
+  Subprozess. Keine Netzwerk-Exposition, keine Auth. Ideal für lokale Nutzung.
+- **HTTP** (der deployte Modus) — ein langlebiger Server für einen Claude-Custom-Connector
+  (siehe oben).
 
 ## Voraussetzungen
 
 - **Python 3.12+** und **[uv](https://docs.astral.sh/uv/)**.
-- **Ein laufender Titan-Service** (das RAG-Backend, Schwester-Repo `titan`). brain-mcp
-  spricht über HTTP mit ihm unter `BRAIN_TITAN_URL` (Default `http://127.0.0.1:8765`);
-  ohne ihn liefern die Tools „Titan unreachable".
-- **Einen Transport wählen:**
-  - **stdio** (Default, am einfachsten) — ein MCP-Client startet brain-mcp als Subprozess.
-    Keine Netzwerk-Exposition, keine Auth. Am besten für lokale Nutzung.
-  - **HTTP** (der deployte Modus) — ein langlebiger Server für einen Claude-*Custom-Connector*.
-    Anthropic verbindet Custom Connectors serverseitig, der Endpunkt muss also öffentlich
-    über HTTPS erreichbar **und** authentifiziert sein. Der Autor exponiert ihn über eine
-    Tailscale-Funnel + einen GitHub-OAuth-Proxy mit Login-Allowlist — siehe `deploy/README.md`.
+- **Ein laufender titan-Service** (das RAG-Backend). brain-mcp spricht über HTTP
+  mit ihm unter `BRAIN_TITAN_URL` (Default `http://127.0.0.1:8765`); ohne ihn liefern
+  die Tools „Titan unreachable".
 
-## Schnellaktivierung (das WSL-Deployment des Autors)
+> **Platzhalter:** Werte wie `<your-user>`, `<your-tailnet-host>.ts.net` und
+> `<your-github-login>` sind Beispiele aus dem Setup des Autors — durch eigene ersetzen.
 
-Dieser Abschnitt beschreibt das spezifische Always-on-Setup des Autors. Zwei systemd-User-Services;
-Claude erreicht den MCP-Server als Custom Connector. Vollständige Anweisungen plus die
-Hinweise zur Anpassung von Grund auf stehen in **`deploy/README.md`**.
-
-**Services (WSL systemd)**
-
-```bash
-mkdir -p ~/.config/systemd/user/
-ln -sf ~/projects/brain-mcp/deploy/brain-watcher.service ~/.config/systemd/user/
-ln -sf ~/projects/brain-mcp/deploy/brain-mcp.service ~/.config/systemd/user/
-systemctl --user daemon-reload
-systemctl --user enable --now brain-watcher brain-mcp
-```
-
-- `brain-watcher` — überwacht den Obsidian-Vault und ingestet geänderte Notizen in Titan.
-- `brain-mcp` — stellt die MCP-Tools über Streamable-HTTP bereit. Im Deployment bindet er
-  `0.0.0.0:9100` (nicht `127.0.0.1`), damit die Windows-seitige Tailscale-Funnel ihn
-  unter WSL2 Mirrored Networking erreichen kann; siehe `deploy/README.md`.
-
-**Claude-Integration**
-
-Custom Connectors werden serverseitig von Anthropic verbunden, der MCP-Endpunkt muss
-also öffentlich erreichbar und authentifiziert sein. brain-mcp wird über Tailscale Funnel
-exponiert und durch einen GitHub-OAuth-Proxy mit Login-Allowlist geschützt. Siehe `deploy/README.md`
-für die Connector-URL, die GitHub-OAuth-App und die `.env`-Auth-Variablen.
-
-## MCP-Tools
-
-Der Server stellt sechs Tools bereit, alle gestützt auf den Titan-RAG-Service:
-
-| Tool | Zweck |
-|---|---|
-| `query_knowledge` | Den Vault in natürlicher Sprache durchsuchen (optionaler `domain`-Filter, `top_k`). |
-| `find_related` | Notizen finden, die einer gegebenen Notiz semantisch verwandt sind. |
-| `list_domains` | Alle Domains im Index mit ihrer Chunk-Anzahl auflisten. |
-| `list_notes` | Jede indexierte Notiz auflisten (optionaler `domain`-Filter) mit Domain + Chunk-Anzahl. |
-| `ingest_note` | Eine Notiz sofort neu indexieren, unter Umgehung der Watcher-Verzögerung (ersetzt alte Chunks). |
-| `delete_note` | Eine Notiz de-indexieren (entfernt ihre Chunks; die Markdown-Datei auf der Platte bleibt unberührt). |
-
----
-
-## Entwicklungs-Setup
+## Entwicklung
 
 Erfordert [uv](https://docs.astral.sh/uv/) und Python 3.12+.
 
 ```bash
-make install
-```
-
-Das installiert alle Abhängigkeiten und registriert pre-commit-Hooks.
-
-## Entwicklung
-
-```bash
+make install    # Abhängigkeiten + pre-commit-Hooks installieren
 make run        # den Server lokal ausführen (python -m brain_mcp)
 make test       # Tests mit Coverage ausführen
-make test-fast  # nur schnelle Tests ausführen (langsame + Integration überspringen)
 make check      # vollständiges Quality-Gate: Lint + Typen + Tests
 make format     # Style-Probleme automatisch beheben
 make help       # alle verfügbaren Befehle auflisten
@@ -88,10 +105,16 @@ make help       # alle verfügbaren Befehle auflisten
 ## Projektstruktur
 
 ```
-src/brain_mcp/    Quellcode
-tests/               Pytest-Tests (spiegelt das src/-Layout)
-docs/ai/             Kontext und Pläne für KI-Agenten
-.github/workflows/   CI-Konfiguration
+src/brain_mcp/
+├── config.py        # Settings (Env-Präfix BRAIN_)
+├── schemas.py       # Pydantic-Schemas (lokale Kopie der titan-API-Schemas)
+├── titan_client.py  # HTTP-Client für titan (httpx, Retry via tenacity)
+├── mcp_server.py    # FastMCP-Server + die sechs Tools
+├── auth.py          # GitHub-OAuth-Proxy mit Login-Allowlist
+└── watcher.py       # VaultWatcher (watchdog, Debounce, Reconnect)
+deploy/              # systemd-Services + Aktivierungs-/Connector-Anleitung
+tests/               # Pytest-Tests (spiegelt das src/-Layout)
+docs/ai/             # Architektur, Entscheidungen und Pläne
 ```
 
 ## Tooling
@@ -106,27 +129,13 @@ docs/ai/             Kontext und Pläne für KI-Agenten
 
 Alle Tools laufen bei jedem Push in der CI.
 
-## Arbeiten mit KI-Tools
+## Dokumentation & Entwickler-Workflow
 
-Dieses Projekt nutzt einen strukturierten Workflow für KI-gestütztes Coding. Jeder
-KI-Agent (Claude, Gemini, Cursor, Aider usw.) sollte zuerst `CLAUDE.md` lesen — sie
-ist als `AGENTS.md` und `GEMINI.md` für Tool-Kompatibilität gespiegelt.
-
-Wichtige Dateien für den KI-Kontext:
-
-- `docs/ai/CONTEXT.md` — Stack, Konventionen, Glossar
-- `docs/ai/CURRENT_TASK.md` — woran aktiv gearbeitet wird
-- `docs/ai/HANDOFF.md` — Zustand für die Fortsetzung von Sitzungen über Modellwechsel hinweg
-- `docs/ai/DECISIONS.md` — Protokoll der Architekturentscheidungen
-- `docs/ai/plans/` — gespeicherte Pläne, erstellt von einem Planungsmodell (z. B. Opus)
-
-Der vorgesehene Workflow:
-
-1. Architektur- und Feature-Pläne werden von einem starken Reasoning-Modell erstellt und unter `docs/ai/plans/` gespeichert
-2. Ein schnelleres/günstigeres Modell implementiert die Pläne
-3. Beide referenzieren den gemeinsamen Kontext in `docs/ai/`
-4. Der Zustand wird über `HANDOFF.md` über Sitzungen hinweg bewahrt
+Vertiefende Architektur- und Designentscheidungen liegen in
+[`docs/ai/`](docs/ai/). Diese Dateien dienen zugleich einem strukturierten
+KI-gestützten Entwicklungsworkflow; `CLAUDE.md` (gespiegelt als
+`AGENTS.md`/`GEMINI.md`) ist der Einstiegspunkt für jeden Agenten.
 
 ## Lizenz
 
-Noch offen (TBD)
+MIT — siehe [LICENSE](LICENSE).
