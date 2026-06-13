@@ -69,7 +69,7 @@ tests/
 | Variable | Default | Bedeutung |
 |---|---|---|
 | BRAIN_TITAN_URL | http://127.0.0.1:8765 | Titan-Service-URL |
-| BRAIN_VAULT_ROOT | /mnt/f/vault | Obsidian-Vault-Root |
+| BRAIN_VAULT_ROOT | /mnt/f/vault | Obsidian-Vault-Root (Beispielpfad; an dein Setup anpassen) |
 | BRAIN_DEBOUNCE_SECONDS | 30.0 | Debounce-Fenster für den Watcher |
 | BRAIN_MCP_TRANSPORT | stdio | `stdio` oder `http` (für Claude-Custom-Connectors) |
 | BRAIN_MCP_HOST | 127.0.0.1 | HTTP-Bind-Host (im Deployment `0.0.0.0` setzen) |

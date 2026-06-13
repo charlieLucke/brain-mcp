@@ -13,7 +13,7 @@ System in Produktion und mit Claude verbunden.
 - [x] HTTP-Transport (`BRAIN_MCP_TRANSPORT=http`); `brain-mcp.service` auf
       `127.0.0.1:9100`
 - [x] OAuth-Auth: GitHub-Proxy mit Allowlist (`src/brain_mcp/auth.py`)
-- [x] `tailscale funnel` aktiv → `https://charliespc.taild04050.ts.net/`
+- [x] `tailscale funnel` aktiv → `https://<your-tailnet-host>.ts.net/`
 - [x] Custom Connector in Claude hinzugefügt, OAuth-Login erfolgreich
 - [x] End-to-end verifiziert: `query_knowledge` liefert Vault-Treffer
 - [x] 2026-05-17: Stage 2 — Tools `list_notes` + `delete_note` (brain hat 6 Tools)
@@ -28,7 +28,7 @@ System in Produktion und mit Claude verbunden.
 
 ## Notizen
 
-- Connector-URL: `https://charliespc.taild04050.ts.net/mcp`
+- Connector-URL: `https://<your-tailnet-host>.ts.net/mcp`
 - 6 Tools: `query_knowledge`, `ingest_note`, `list_domains`, `find_related`,
   `list_notes`, `delete_note`.
 - Auth-Konfiguration (Secrets) in `brain-mcp/.env` (gitignored).
