@@ -5,8 +5,8 @@ Wants=titan-service.service
 
 [Service]
 Type=simple
-WorkingDirectory=/home/<your-user>/projects/brain-mcp
-ExecStart=/home/<your-user>/projects/brain-mcp/.venv/bin/brain-watcher
+WorkingDirectory=/home/charl/projects/brain-mcp
+ExecStart=/home/charl/projects/brain-mcp/.venv/bin/brain-watcher
 Restart=on-failure
 RestartSec=10
 Environment="BRAIN_VAULT_ROOT=/mnt/f/vault"
