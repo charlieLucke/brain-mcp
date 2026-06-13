@@ -121,7 +121,7 @@ local or tailnet-private solution fundamentally cannot work.
 brain-mcp uses a GitHub OAuth proxy (`fastmcp` `OAuthProxy` with GitHub endpoints) and a
 custom token verifier `GitHubAllowlistVerifier` (`src/brain_mcp/auth.py`) that only admits
 GitHub logins from an allowlist. The server runs publicly behind `tailscale funnel`; in
-Claude it is wired in as the custom connector `https://charliespc.taild04050.ts.net/mcp`.
+Claude it is wired in as the custom connector `https://<your-tailnet-host>.ts.net/mcp`.
 **Reasoning:** Claude connects custom connectors server-side → a public endpoint is needed
 (Funnel). A public, unauthenticated vault server is unacceptable → OAuth. But GitHub OAuth
 authenticates *any* GitHub account; since the vault is personal, the allowlist verifier
@@ -137,7 +137,7 @@ restricts it to the owner and rejects everyone else already at the auth layer (4
   the variables.
 - Auth applies only in HTTP transport; stdio stays local/unauthenticated.
 - Operational prerequisites: `tailscale funnel` active (persistent), a GitHub OAuth app
-  with callback `https://charliespc.taild04050.ts.net/auth/callback`, an intact
+  with callback `https://<your-tailnet-host>.ts.net/auth/callback`, an intact
   WSL2 mirrored-networking bridge (otherwise 502 Bad Gateway at the Funnel; fix:
   `wsl --shutdown` + restart).
 - End-to-end verified: `query_knowledge` from Claude returns vault hits.

@@ -23,7 +23,7 @@ the connector connects again, brain tools live.**
 ## Operational setup (as of today)
 
 - brain-mcp: HTTP on `0.0.0.0:9100`, linger active → services stay running.
-- Connector URL unchanged: `https://charliespc.taild04050.ts.net/mcp`.
+- Connector URL unchanged: `https://<your-tailnet-host>.ts.net/mcp`.
 - "`linked` instead of `enabled`" still applies — a stop for gaming stays in effect;
   linger just no longer kills services when idle.
 
@@ -101,10 +101,10 @@ The `brain` connector is live in Claude and verified end-to-end.
 - Auth: GitHub OAuth proxy, allowlist = `charlieLucke`. Configuration in
   `brain-mcp/.env` (gitignored): `BRAIN_MCP_AUTH=github`, `BRAIN_MCP_BASE_URL`,
   `BRAIN_GITHUB_CLIENT_ID/SECRET`, `BRAIN_GITHUB_ALLOWED_LOGINS`.
-- `tailscale funnel` (persistent): `https://charliespc.taild04050.ts.net/` →
+- `tailscale funnel` (persistent): `https://<your-tailnet-host>.ts.net/` →
   `http://localhost:9100`. Reset: `tailscale funnel --https=443 off`.
-- Claude connector URL: `https://charliespc.taild04050.ts.net/mcp`.
-- GitHub OAuth app: callback `https://charliespc.taild04050.ts.net/auth/callback`.
+- Claude connector URL: `https://<your-tailnet-host>.ts.net/mcp`.
+- GitHub OAuth app: callback `https://<your-tailnet-host>.ts.net/auth/callback`.
 - E2E verified: `query_knowledge` from Claude returns vault hits (score 5.71).
 
 ## Open / Next steps
