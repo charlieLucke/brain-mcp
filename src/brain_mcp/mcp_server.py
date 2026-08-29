@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
+from datetime import date
 from functools import wraps
 from pathlib import Path
 
@@ -254,6 +255,86 @@ def list_notes(domain: str | None = None) -> str:
         f"- `{n.source_path}` — domain: **{n.domain}**, {n.chunk_count} chunk(s)" for n in notes
     ]
     return f"{len(notes)} indexed note(s):\n" + "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# list_stale
+# ---------------------------------------------------------------------------
+
+
+def _days_since(iso_date: str | None) -> int | None:
+    """Whole days between an ISO date and today, or None if unparseable/absent."""
+    if not iso_date:
+        return None
+    try:
+        then = date.fromisoformat(iso_date[:10])
+    except ValueError:
+        return None
+    return (date.today() - then).days
+
+
+@mcp.tool()
+@_titan_errors
+def list_stale(older_than_days: int = 90, domain: str | None = None) -> str:
+    """Find notes whose claims may no longer be true.
+
+    Answers the question a knowledge base cannot otherwise answer: what does it
+    still assert that nobody has checked in a long time? Ranked worst first.
+
+    Two kinds of finding, and the first one matters more:
+      - never checked: the note has no 'geprueft' date at all
+      - checked long ago: older than the given threshold
+
+    Notes written as 'agent-entwurf' (drafted by an AI, never reviewed) are
+    listed first regardless of age.
+
+    Args:
+        older_than_days: Age threshold for "checked long ago". Default 90.
+        domain: Optional domain filter (e.g. "betrieb"). Leave empty for all.
+
+    Returns:
+        Markdown list, worst first, with the age and source of each note.
+    """
+    result = _client.list_notes()
+    notes = [n for n in result.notes if n.domain == domain] if domain else result.notes
+    if not notes:
+        return f"_No indexed notes in domain {domain!r}._" if domain else "_No notes indexed yet._"
+
+    entwuerfe: list[str] = []
+    nie: list[str] = []
+    alt: list[tuple[int, str]] = []
+
+    for n in notes:
+        age = _days_since(n.geprueft)
+        label = f"`{n.source_path}` — **{n.domain}**"
+        if n.quelle == "agent-entwurf":
+            entwuerfe.append(f"- {label} — drafted by an agent, never reviewed")
+        elif age is None:
+            src = f", source: {n.quelle}" if n.quelle else ""
+            nie.append(f"- {label} — **never checked**{src}")
+        elif age >= older_than_days:
+            alt.append((age, f"- {label} — last checked {age} days ago ({n.geprueft})"))
+
+    if not (entwuerfe or nie or alt):
+        return (
+            f"_Nothing stale: every note has been checked within {older_than_days} days._\n"
+            f"({len(notes)} note(s) examined.)"
+        )
+
+    out: list[str] = []
+    if entwuerfe:
+        out.append(f"**Agent drafts, unreviewed ({len(entwuerfe)}):**")
+        out.extend(entwuerfe)
+    if nie:
+        out.append(f"\n**Never checked ({len(nie)}):**")
+        out.extend(nie)
+    if alt:
+        out.append(f"\n**Checked more than {older_than_days} days ago ({len(alt)}):**")
+        out.extend(line for _, line in sorted(alt, reverse=True))
+
+    total = len(entwuerfe) + len(nie) + len(alt)
+    out.append(f"\n_{total} of {len(notes)} note(s) worth a look._")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------------------
