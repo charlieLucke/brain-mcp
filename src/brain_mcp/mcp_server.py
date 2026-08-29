@@ -15,6 +15,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
 from brain_mcp.schemas import Chunk
+from brain_mcp.style import lade_stil
 from brain_mcp.titan_client import TitanClient
 from brain_mcp.vault_writer import (
     QUELLE_AGENT,
@@ -394,9 +395,30 @@ def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
 
 
 @mcp.tool()
+def vault_style() -> str:
+    """The house form for notes in this vault. Read this before writing one.
+
+    A session reached through this connector sees neither `CLAUDE.md` (it is
+    marked `indexed: false`) nor the skill file — skills do not travel over MCP.
+    This tool hands both over on request instead of carrying them in every tool
+    description, where they would cost tokens in every session including the
+    ones that only search.
+
+    Returns:
+        Markdown: structure, frontmatter, the sections for open points and
+        ideas, linking, how to mark superseded claims, plus the hard rules.
+        Around 2000 tokens — call it once per session, not once per note.
+    """
+    return lade_stil()
+
+
+@mcp.tool()
 @_write_errors
 def write_note(file_path: str, domain: str, content: str) -> str:
     """Create a NEW note in the vault. Fails if the file already exists.
+
+    Call `vault_style` first unless you already did in this session — the house
+    form is not part of these descriptions.
 
     Frontmatter is written for you — do not include a `---` block in `content`.
     The note is marked `quelle: agent-entwurf`, which means "written by an AI,
@@ -485,6 +507,9 @@ def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -
 @_write_errors
 def append_section(file_path: str, section: str) -> str:
     """Append a section to the end of an existing note.
+
+    Call `vault_style` first if you have not this session — headings like
+    `## Offene Punkte` follow a fixed form.
 
     The most common real case: adding a finding without touching anything else.
     Needs no `content_hash` — appending cannot collide with an edit elsewhere in
