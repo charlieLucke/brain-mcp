@@ -84,6 +84,11 @@ module = "watchdog.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+# python-frontmatter liefert keine Stubs und kein py.typed
+module = "frontmatter.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 # fastmcp.tool() and tenacity @retry are untyped decorators — suppress per-module
 module = ["brain_mcp.mcp_server", "brain_mcp.titan_client"]
 disable_error_code = ["untyped-decorator", "no-any-return"]

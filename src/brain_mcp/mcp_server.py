@@ -16,6 +16,18 @@ from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
 from brain_mcp.schemas import Chunk
 from brain_mcp.titan_client import TitanClient
+from brain_mcp.vault_writer import (
+    QUELLE_AGENT,
+    QUELLEN,
+    StaleWriteError,
+    VaultWriteError,
+    git_commit,
+    markiere_als_agentenarbeit,
+    pruefe_domain,
+    read_note,
+    rendere,
+    resolve_note_path,
+)
 
 log = logging.getLogger(__name__)
 
@@ -335,6 +347,205 @@ def list_stale(older_than_days: int = 90, domain: str | None = None) -> str:
     total = len(entwuerfe) + len(nie) + len(alt)
     out.append(f"\n_{total} of {len(notes)} note(s) worth a look._")
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# Writing tools
+#
+# Every write goes through vault_writer, which enforces the path sandbox, the
+# stale check, the frontmatter rules and one git commit per write. None of that
+# is asked for in a prompt — a tool that cannot do the wrong thing beats an
+# instruction not to do it.
+# ---------------------------------------------------------------------------
+
+
+def _write_errors[**P](func: Callable[P, str]) -> Callable[P, str]:
+    """Turn a rejected write into a sentence, not a stack trace."""
+
+    @wraps(func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> str:
+        try:
+            return func(*args, **kwargs)
+        except StaleWriteError as exc:
+            return f"Rejected — the note changed since you read it.\n\n{exc}"
+        except VaultWriteError as exc:
+            return f"Rejected: {exc}"
+        except OSError as exc:
+            return f"Could not write: {exc}"
+
+    return wrapper
+
+
+def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
+    """Re-index immediately and report. The watcher would take 30s otherwise."""
+    try:
+        result = _client.ingest_file(path, force=True)
+        indexed = f"{result.chunks_created} chunk(s) indexed"
+    except httpx.HTTPError as exc:
+        indexed = f"not indexed yet ({exc}) — the watcher will retry"
+    return (
+        f"{hinweis}\n\n"
+        f"- file: `{path}`\n"
+        f"- commit: `{commit}`\n"
+        f"- index: {indexed}\n"
+        f"- **`quelle: agent-entwurf`, `geprueft` cleared** — this note now shows up in "
+        f"`list_stale` until a human confirms it with `mark_verified`."
+    )
+
+
+@mcp.tool()
+@_write_errors
+def write_note(file_path: str, domain: str, content: str) -> str:
+    """Create a NEW note in the vault. Fails if the file already exists.
+
+    Frontmatter is written for you — do not include a `---` block in `content`.
+    The note is marked `quelle: agent-entwurf`, which means "written by an AI,
+    not yet checked by a human". That is not a formality: it keeps the note out
+    of the pool of things the vault treats as verified, and `list_stale` will
+    keep offering it until someone confirms it.
+
+    Args:
+        file_path: Filename (e.g. "neue-notiz.md") or absolute path inside the
+            vault. Bare filenames land in notes/.
+        domain: One of arbeitsplatz, betrieb, rag-system, projekte, vault,
+            lernen, business. Unknown values are refused — a new domain is a
+            decision about the vault's structure and belongs to the operator.
+        content: The Markdown body, starting with a `# Heading`.
+
+    Returns:
+        Path, commit hash and index status.
+    """
+    path = resolve_note_path(file_path, must_exist=False)
+    meta = markiere_als_agentenarbeit({"domain": pruefe_domain(domain)})
+    meta["created"] = date.today().isoformat()
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(rendere(meta, content), encoding="utf-8", newline="\n")
+
+    commit = git_commit(
+        [path],
+        f"vault(agent): Notiz {path.stem} angelegt",
+        "Von Claude ueber brain-mcp geschrieben, noch nicht geprueft.",
+    )
+    return _nach_dem_schreiben(
+        path, commit, f"Created **{path.name}** in domain `{meta['domain']}`."
+    )
+
+
+@mcp.tool()
+@_write_errors
+def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -> str:
+    """Replace an exact passage in an existing note.
+
+    Targeted replacement, not a rewrite: `old_text` must occur exactly once, so a
+    vague match fails loudly instead of changing the wrong paragraph.
+
+    `content_hash` is the safety catch. Pass the hash you got from `list_notes`
+    or `query_knowledge` for this note; if the file changed since then, the write
+    is refused rather than silently overwriting someone else's edit.
+
+    Args:
+        file_path: Path to the note inside the vault.
+        old_text: The exact text to replace. Must appear exactly once.
+        new_text: What to put there instead.
+        content_hash: The sha256 you saw when you read the note.
+
+    Returns:
+        Path, commit hash and index status.
+    """
+    path = resolve_note_path(file_path, must_exist=True)
+    state = read_note(path)
+
+    if content_hash != state.content_hash:
+        raise StaleWriteError(
+            f"You passed {content_hash[:12]}…, the file is now {state.content_hash[:12]}…. "
+            "Read the note again and redo the edit against the current text."
+        )
+
+    treffer = state.body.count(old_text)
+    if treffer == 0:
+        raise VaultWriteError("`old_text` does not occur in the note. Copy it exactly.")
+    if treffer > 1:
+        raise VaultWriteError(
+            f"`old_text` occurs {treffer} times — that is ambiguous. Include more "
+            "surrounding lines so the passage is unique."
+        )
+
+    neuer_body = state.body.replace(old_text, new_text, 1)
+    meta = markiere_als_agentenarbeit(state.meta)
+    path.write_text(rendere(meta, neuer_body), encoding="utf-8", newline="\n")
+
+    commit = git_commit([path], f"vault(agent): {path.stem} bearbeitet")
+    return _nach_dem_schreiben(path, commit, f"Edited **{path.name}**.")
+
+
+@mcp.tool()
+@_write_errors
+def append_section(file_path: str, section: str) -> str:
+    """Append a section to the end of an existing note.
+
+    The most common real case: adding a finding without touching anything else.
+    Needs no `content_hash` — appending cannot collide with an edit elsewhere in
+    the file.
+
+    Args:
+        file_path: Path to the note inside the vault.
+        section: Markdown to append, normally starting with a `##` heading.
+
+    Returns:
+        Path, commit hash and index status.
+    """
+    path = resolve_note_path(file_path, must_exist=True)
+    state = read_note(path)
+
+    neuer_body = state.body.rstrip("\n") + "\n\n" + section.strip() + "\n"
+    meta = markiere_als_agentenarbeit(state.meta)
+    path.write_text(rendere(meta, neuer_body), encoding="utf-8", newline="\n")
+
+    commit = git_commit([path], f"vault(agent): Abschnitt in {path.stem} ergaenzt")
+    return _nach_dem_schreiben(path, commit, f"Appended to **{path.name}**.")
+
+
+@mcp.tool()
+@_write_errors
+def mark_verified(file_path: str, quelle: str = "gemessen") -> str:
+    """Record that a note's claims were checked against reality today.
+
+    The counterpart to the writing tools: they clear `geprueft`, this restores
+    it. Use it only when the claims were actually checked — an invented date
+    takes the note out of `list_stale` forever, which is worse than no date.
+
+    Args:
+        file_path: Path to the note inside the vault.
+        quelle: How the content is grounded — gemessen (measured),
+            recherchiert (looked up), or ueberlegt (reasoned).
+
+    Returns:
+        Path and commit hash.
+    """
+    if quelle not in QUELLEN or quelle == QUELLE_AGENT:
+        erlaubt = ", ".join(sorted(QUELLEN - {QUELLE_AGENT}))
+        raise VaultWriteError(f"`quelle` must be one of: {erlaubt} (got {quelle!r}).")
+
+    path = resolve_note_path(file_path, must_exist=True)
+    state = read_note(path)
+
+    heute = date.today().isoformat()
+    meta = dict(state.meta)
+    meta["geprueft"] = heute
+    meta["quelle"] = quelle
+    path.write_text(rendere(meta, state.body), encoding="utf-8", newline="\n")
+
+    commit = git_commit([path], f"vault: {path.stem} geprueft ({heute})")
+    try:
+        _client.ingest_file(path, force=True)
+        idx = "re-indexed"
+    except httpx.HTTPError:
+        idx = "not re-indexed — the watcher will pick it up"
+    return (
+        f"**{path.name}** marked as checked on {heute} (`quelle: {quelle}`).\n\n"
+        f"- commit: `{commit}`\n- index: {idx}"
+    )
 
 
 # ---------------------------------------------------------------------------
