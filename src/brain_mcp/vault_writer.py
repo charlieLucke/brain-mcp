@@ -69,20 +69,63 @@ class NoteState:
 # ─── Pfad und Lesen ──────────────────────────────────────────────────────────
 
 
-def resolve_note_path(file_path: str, *, must_exist: bool) -> Path:
+def _suche_nach_namen(root: Path, name: str) -> Path | None:
+    """Sucht eine Notiz an ihrem Dateinamen ueber alle Domain-Ordner.
+
+    Seit dem 29.08.2026 liegen die Notizen in ``notes/<domain>/``. Ein Agent
+    kennt aber Namen, keine Pfade: Wikilinks nennen den Stamm, und wer eine
+    Notiz aus dem Gedaechtnis aendern will, tippt ``coolify-prod.md``. Ohne
+    diese Suche waere jeder solche Aufruf seit der Umsortierung gebrochen.
+
+    Mehrdeutigkeit wird **nicht** geraten. Zwei Notizen gleichen Namens in
+    verschiedenen Domains sind moeglich, und die falsche zu treffen waere
+    schlimmer als eine Fehlermeldung.
+    """
+    treffer = sorted((root / "notes").rglob(name))
+    if len(treffer) > 1:
+        orte = ", ".join(str(p.relative_to(root)) for p in treffer)
+        raise VaultWriteError(
+            f"Der Name {name!r} kommt mehrfach vor ({orte}). Bitte den vollen Pfad angeben."
+        )
+    return treffer[0] if treffer else None
+
+
+def resolve_note_path(file_path: str, *, must_exist: bool, domain: str | None = None) -> Path:
     """Prueft einen Pfad gegen die Sandbox und gibt ihn aufgeloest zurueck.
 
+    Args:
+        file_path: Absoluter Pfad, ein Pfad relativ zur Vault-Wurzel
+            (``notes/betrieb/x.md``) oder ein blosser Dateiname.
+        must_exist: Bei True wird ein blosser Dateiname in allen Domain-Ordnern
+            gesucht. Bei False entscheidet ``domain`` ueber den Zielordner.
+        domain: Zielordner fuer eine **neue** Notiz. Ohne Angabe landet sie in
+            ``notes/`` — das ist seit der Umsortierung nur noch fuer 00-home
+            richtig und sonst ein Fehler des Aufrufers.
+
     Raises:
-        VaultWriteError: ausserhalb des Vaults, keine .md, oder Existenz passt
-            nicht zur Erwartung.
+        VaultWriteError: ausserhalb des Vaults, keine .md, mehrdeutiger Name,
+            oder Existenz passt nicht zur Erwartung.
     """
     root = settings.vault_root.resolve()
     candidate = Path(file_path)
-    if not candidate.is_absolute():
-        candidate = root / "notes" / candidate
+
+    if candidate.is_absolute():
+        ziel = candidate
+    elif len(candidate.parts) > 1:
+        # Mit Ordner: "notes/betrieb/x.md" ab der Wurzel, "betrieb/x.md" ab notes/.
+        ziel = root / candidate if candidate.parts[0] == "notes" else root / "notes" / candidate
+    else:
+        gefunden = _suche_nach_namen(root, candidate.name) if must_exist else None
+        if gefunden is not None:
+            ziel = gefunden
+        elif domain:
+            ziel = root / "notes" / domain / candidate
+        else:
+            ziel = root / "notes" / candidate
+
     # resolve() loest Symlinks auf, bevor verglichen wird — sonst liesse sich
     # per Symlink aus dem Vault herauszeigen.
-    resolved = candidate.resolve()
+    resolved = ziel.resolve()
 
     if not resolved.is_relative_to(root):
         raise VaultWriteError(f"Pfad liegt ausserhalb des Vaults ({root}): {file_path}")

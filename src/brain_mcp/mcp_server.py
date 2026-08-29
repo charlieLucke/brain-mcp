@@ -405,8 +405,9 @@ def write_note(file_path: str, domain: str, content: str) -> str:
     keep offering it until someone confirms it.
 
     Args:
-        file_path: Filename (e.g. "neue-notiz.md") or absolute path inside the
-            vault. Bare filenames land in notes/.
+        file_path: Filename (e.g. "neue-notiz.md") or a path inside the vault.
+            A bare filename lands in notes/<domain>/ — notes are filed by
+            domain since 2026-08-29. Pass a full path only to override that.
         domain: One of arbeitsplatz, betrieb, rag-system, projekte, vault,
             lernen, business. Unknown values are refused — a new domain is a
             decision about the vault's structure and belongs to the operator.
@@ -415,8 +416,9 @@ def write_note(file_path: str, domain: str, content: str) -> str:
     Returns:
         Path, commit hash and index status.
     """
-    path = resolve_note_path(file_path, must_exist=False)
-    meta = markiere_als_agentenarbeit({"domain": pruefe_domain(domain)})
+    geprueft = pruefe_domain(domain)
+    path = resolve_note_path(file_path, must_exist=False, domain=geprueft)
+    meta = markiere_als_agentenarbeit({"domain": geprueft})
     meta["created"] = date.today().isoformat()
 
     path.parent.mkdir(parents=True, exist_ok=True)

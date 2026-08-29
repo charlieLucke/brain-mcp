@@ -172,3 +172,55 @@ def test_hash_aendert_sich_mit_dem_inhalt(vault: Path) -> None:
 def test_stale_ist_ein_vaultwriteerror() -> None:
     """Damit ein Aufrufer beide mit einem except faengt, aber unterscheiden kann."""
     assert issubclass(StaleWriteError, VaultWriteError)
+
+
+# ─── Domain-Unterordner (seit 29.08.2026) ────────────────────────────────────
+#
+# Die Notizen liegen seither in notes/<domain>/. Ein Agent kennt aber Namen,
+# keine Pfade — Wikilinks nennen den Stamm. Ohne die Namenssuche waere jeder
+# edit_note("coolify-prod.md", ...) seit der Umsortierung gebrochen, und neue
+# Notizen waeren im falschen Ordner gelandet.
+
+
+def test_neue_notiz_landet_im_domain_ordner(vault: Path) -> None:
+    p = resolve_note_path("neu.md", must_exist=False, domain="betrieb")
+    assert p == (vault / "notes" / "betrieb" / "neu.md").resolve()
+
+
+def test_neue_notiz_ohne_domain_bleibt_oben(vault: Path) -> None:
+    p = resolve_note_path("neu.md", must_exist=False)
+    assert p == (vault / "notes" / "neu.md").resolve()
+
+
+def test_blosser_name_wird_im_unterordner_gefunden(vault: Path) -> None:
+    (vault / "notes" / "betrieb").mkdir(parents=True)
+    ziel = vault / "notes" / "betrieb" / "coolify-prod.md"
+    ziel.write_text("---\ndomain: betrieb\n---\n\n# X\n", encoding="utf-8")
+    assert resolve_note_path("coolify-prod.md", must_exist=True) == ziel.resolve()
+
+
+def test_mehrdeutiger_name_wird_nicht_geraten(vault: Path) -> None:
+    for d in ("betrieb", "projekte"):
+        (vault / "notes" / d).mkdir(parents=True)
+        (vault / "notes" / d / "doppelt.md").write_text("# X\n", encoding="utf-8")
+    with pytest.raises(VaultWriteError, match="mehrfach"):
+        resolve_note_path("doppelt.md", must_exist=True)
+
+
+def test_pfad_ab_vault_wurzel(vault: Path) -> None:
+    (vault / "notes" / "lernen").mkdir(parents=True)
+    ziel = vault / "notes" / "lernen" / "x.md"
+    ziel.write_text("# X\n", encoding="utf-8")
+    assert resolve_note_path("notes/lernen/x.md", must_exist=True) == ziel.resolve()
+
+
+def test_pfad_ab_notes(vault: Path) -> None:
+    (vault / "notes" / "lernen").mkdir(parents=True)
+    ziel = vault / "notes" / "lernen" / "y.md"
+    ziel.write_text("# Y\n", encoding="utf-8")
+    assert resolve_note_path("lernen/y.md", must_exist=True) == ziel.resolve()
+
+
+def test_sandbox_haelt_auch_mit_unterordnern(vault: Path) -> None:
+    with pytest.raises(VaultWriteError, match="ausserhalb"):
+        resolve_note_path("../../etc/passwd.md", must_exist=False, domain="betrieb")
