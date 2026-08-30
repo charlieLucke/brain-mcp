@@ -396,7 +396,7 @@ def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
 
 @mcp.tool()
 def vault_style() -> str:
-    """The house form for notes in this vault. Read this before writing one.
+    """The house form for notes in this vault. Call this BEFORE writing or editing one.
 
     A session reached through this connector sees neither `CLAUDE.md` (it is
     marked `indexed: false`) nor the skill file — skills do not travel over MCP.
@@ -417,8 +417,9 @@ def vault_style() -> str:
 def write_note(file_path: str, domain: str, content: str) -> str:
     """Create a NEW note in the vault. Fails if the file already exists.
 
-    Call `vault_style` first unless you already did in this session — the house
-    form is not part of these descriptions.
+    **Call `vault_style` first** unless you already did in this session. The
+    house form — structure, frontmatter, section conventions, how long a section
+    should be — is not part of these descriptions.
 
     Frontmatter is written for you — do not include a `---` block in `content`.
     The note is marked `quelle: agent-entwurf`, which means "written by an AI,
@@ -460,6 +461,9 @@ def write_note(file_path: str, domain: str, content: str) -> str:
 @_write_errors
 def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -> str:
     """Replace an exact passage in an existing note.
+
+    **Call `vault_style` first** unless you already did in this session — an
+    edit has to match the form around it.
 
     Targeted replacement, not a rewrite: `old_text` must occur exactly once, so a
     vague match fails loudly instead of changing the wrong paragraph.
@@ -508,8 +512,8 @@ def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -
 def append_section(file_path: str, section: str) -> str:
     """Append a section to the end of an existing note.
 
-    Call `vault_style` first if you have not this session — headings like
-    `## Offene Punkte` follow a fixed form.
+    **Call `vault_style` first** unless you already did in this session.
+    Headings like `## Offene Punkte` follow a fixed form.
 
     The most common real case: adding a finding without touching anything else.
     Needs no `content_hash` — appending cannot collide with an edit elsewhere in
