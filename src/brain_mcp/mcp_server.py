@@ -99,13 +99,33 @@ def _titan_errors[**P](func: Callable[P, str]) -> Callable[P, str]:
     return wrapper
 
 
+def _herkunft(chunk: Chunk) -> str:
+    """Ein Warnhinweis, wenn der Treffer noch niemand geprueft hat.
+
+    Ohne das sieht ein Agenten-Entwurf aus wie eine gemessene Notiz, und der
+    Agent liest seine eigene ungepruefte Behauptung als Wahrheit zurueck — die
+    Kontaminationsschleife aus plan-second-brain 3.3. Das Feld `quelle` gab es
+    seit dem 29.08.2026, aber es kam nie beim Leser an; titan traegt es seit
+    dem 30.08. im Suchergebnis mit.
+    """
+    quelle = chunk.metadata.get("quelle")
+    if quelle == "agent-entwurf":
+        return "  ⚠️ **von einem Agenten geschrieben, noch nicht geprueft**"
+    if quelle and not chunk.metadata.get("geprueft"):
+        return f"  _(quelle: {quelle}, nie geprueft)_"
+    return ""
+
+
 def _format_chunks(chunks: list[Chunk], cache_hit: bool, latency_ms: int) -> str:
     """Format a list of Chunk objects as a Markdown string for Claude."""
     if not chunks:
         return "_No relevant chunks found._"
     lines: list[str] = []
     for i, chunk in enumerate(chunks, 1):
-        lines.append(f"## Result {i} (score: {chunk.score:.2f}, source: {chunk.source_path})")
+        lines.append(
+            f"## Result {i} (score: {chunk.score:.2f}, source: {chunk.source_path})"
+            f"{_herkunft(chunk)}"
+        )
         lines.append(chunk.text.strip())
         lines.append("")
     lines.append(f"*Cache hit: {str(cache_hit).lower()}, latency: {latency_ms}ms*")
