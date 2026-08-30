@@ -7,7 +7,7 @@ both sides and bump the version field.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -52,9 +52,20 @@ class DomainsResponse(BaseModel):
     counts: dict[str, int]
 
 
+class LinkedNote(BaseModel):
+    """Eine per Wikilink verbundene Notiz — von Hand gesetzt, nicht errechnet."""
+
+    source_path: str
+    domain: str
+    direction: Literal["outgoing", "incoming", "both"]
+
+
 class FindRelatedResponse(BaseModel):
     source_path: str
     related: list[Chunk]
+    # Nachgezogen 30.08.2026: titan liefert das seit dem 29.08., diese Kopie
+    # kannte es nicht. Genau die Drift, vor der der Modul-Docstring warnt.
+    linked: list[LinkedNote] = Field(default_factory=list)
     latency_ms: int
 
 

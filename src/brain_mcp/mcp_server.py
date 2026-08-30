@@ -377,6 +377,40 @@ def _write_errors[**P](func: Callable[P, str]) -> Callable[P, str]:
     return wrapper
 
 
+def _wer_zeigt_hierher(path: Path) -> str:
+    """Die Notizen, die per Wikilink auf diese zeigen.
+
+    **Warum das nach jedem Schreibvorgang mitkommt.** In einem Vault haengen
+    Aussagen aneinander: Notiz A sagt etwas, Notiz B verweist darauf. Wer A
+    aendert und B stehen laesst, hat zwei Wahrheiten erzeugt. Die Regel dazu
+    steht in CLAUDE.md ("Einem Verweis sofort folgen"), aber eine Regel wirkt
+    nur, wenn sie im richtigen Moment vor Augen steht - am 30.08.2026 hat eine
+    Connector-Sitzung genau das uebersehen.
+
+    Deshalb steht es hier und nicht in einer Werkzeugbeschreibung: Es kostet
+    keinen Fixkontext und kommt genau dann, wenn es zaehlt.
+    """
+    try:
+        antwort = _client.find_related(path, top_k=1)
+    except httpx.HTTPError:
+        return "- inbound links: unknown (titan did not answer)"
+
+    # Nur der Name: ihn nimmt resolve_note_path seit dem 30.08.2026 direkt an,
+    # und achtzehn volle Pfade sind eine Wand statt einer Liste.
+    rein = [Path(n.source_path).stem for n in antwort.linked if n.direction in ("incoming", "both")]
+    if not rein:
+        return (
+            "- **No note links here yet.** This vault has no orphans - link it from at "
+            "least one existing note, usually `notes/00-home.md`."
+        )
+    liste = ", ".join(f"`{p}`" for p in sorted(rein))
+    return (
+        f"- **{len(rein)} note(s) link here - check whether they still agree:** {liste}. "
+        "A claim you changed here may be repeated or referenced there; two notes "
+        "disagreeing is worse than one being incomplete."
+    )
+
+
 def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
     """Re-index immediately and report. The watcher would take 30s otherwise."""
     try:
@@ -390,7 +424,8 @@ def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
         f"- commit: `{commit}`\n"
         f"- index: {indexed}\n"
         f"- **`quelle: agent-entwurf`, `geprueft` cleared** — this note now shows up in "
-        f"`list_stale` until a human confirms it with `mark_verified`."
+        f"`list_stale` until a human confirms it with `mark_verified`.\n"
+        f"{_wer_zeigt_hierher(path)}"
     )
 
 
