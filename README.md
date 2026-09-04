@@ -109,6 +109,7 @@ src/brain_mcp/
 ├── titan_client.py  # HTTP client for titan (httpx, retry via tenacity)
 ├── mcp_server.py    # FastMCP server + the six tools
 ├── auth.py          # GitHub OAuth proxy with a login allowlist
+├── read_api.py      # read-only HTTP side (/api/vault/*), token-gated
 └── watcher.py       # VaultWatcher (watchdog, debounce, reconnect)
 deploy/              # systemd services + activation/connector guide
 tests/               # Pytest tests (mirrors src/ layout)

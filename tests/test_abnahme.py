@@ -107,3 +107,28 @@ def test_unbekannte_quelle_wird_abgelehnt(vault: Path) -> None:
     p = _schreibe(vault, "entwurf", quelle="agent-entwurf")
     with pytest.raises(VaultWriteError):
         g.abnehmen(p, "geraten")
+
+
+def test_diff_einer_reinen_agentennotiz_zeigt_die_ganze_notiz(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ohne menschliche Fassung ist "was niemand gelesen hat" die ganze Datei.
+
+    Vorher lief das ueber ``git show`` ohne Commit-Angabe und ging leer aus, sobald
+    der letzte Commit die Datei nicht beruehrt hatte — also fuer genau die Notizen,
+    um die es geht.
+    """
+    aufrufe: list[tuple[str, ...]] = []
+
+    def fake_git(*args: str) -> str:
+        aufrufe.append(args)
+        return "diff --git ...\n+++ alles neu\n"
+
+    monkeypatch.setattr(g, "_git", fake_git)
+    monkeypatch.setattr(g, "letzte_menschliche_fassung", lambda p: None)
+
+    ergebnis = g.agenten_diff(Path("/vault/notes/x.md"))
+
+    assert "alles neu" in ergebnis
+    assert aufrufe[0][0] == "diff"
+    assert aufrufe[0][1].startswith(g.LEERER_BAUM)

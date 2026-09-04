@@ -28,6 +28,12 @@ class Settings(BaseSettings):
     github_client_secret: str = ""
     github_allowed_logins: str = ""  # kommagetrennte GitHub-Logins mit Zugriff
 
+    # Bearer-Token für die lesende HTTP-Seite (/api/vault/*). Leer = die Routen
+    # werden gar nicht registriert. Kein Default und kein erzeugter Wert: caddy
+    # proxyt auf diesem Port alles durch den öffentlichen Funnel, ein
+    # unauthentifizierter Vault-Leser darf also nicht aus Versehen entstehen.
+    read_token: str = ""
+
     model_config = SettingsConfigDict(env_prefix="BRAIN_", env_file=".env", extra="ignore")
 
 

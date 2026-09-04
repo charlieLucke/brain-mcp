@@ -200,3 +200,36 @@ titan/dashboard-Erfahrung kontraproduktiv) — verworfen.
   die Mirrored-Bridge).
 - `BRAIN_GITHUB_ALLOWED_LOGINS` wurde im Zuge des GitHub-Renames auf `charlieLucke`
   aktualisiert (in `.env`, gitignored).
+
+## 2026-09-05: Eine lesende HTTP-Seite, gesichert durch ein Token, das nicht optional ist
+**Entscheidung:** Drei Routen auf dem bestehenden HTTP-Transport — `/api/vault/health`,
+`/api/vault/open`, `/api/vault/diff` — die als JSON zurückgeben, was `tools/geprueft.py`
+ohnehin berechnet. Registriert nur, wenn `BRAIN_READ_TOKEN` gesetzt ist; ohne das
+existieren sie nicht. Nur lesend: Eine Notiz abzunehmen schreibt und committet, und das
+bleibt bei `mark_verified` über MCP und bei der Kommandozeile.
+**Begründung:** Die Abnahme-Ansicht, die `plan-zentrales-dashboard` als Phase 4b führt,
+braucht genau diese zwei Antworten — und sie waren nur von einem Client erreichbar, der
+MCP spricht und ein OAuth-Token hält. Das ist die richtige Form für Claude und die
+falsche für ein Dashboard auf derselben Maschine. Die Alternative wäre gewesen, dieses
+Dashboard zum MCP-Client zu machen: eine neue Abhängigkeit, ein Token zu halten und eine
+zweite Stelle, an der Vault-Logik auseinanderlaufen kann. Drei JSON-Routen über die
+vorhandenen Funktionen halten die Logik hier.
+**Das Token ist das ganze Tor, und das mit Absicht.** caddys Default-Route proxyt
+*alles* auf Port 9100 durch den öffentlichen Funnel — nachgemessen: eine
+unauthentifizierte Anfrage über :8088 erreicht diese Pfade. Es gibt also kein Loopback,
+worauf man sich verlassen könnte, keinen Default-Wert und keinen erzeugten: nicht gesetzt
+heißt, die Routen entstehen gar nicht.
+**Erwogene Alternativen:** Eine zweite App auf einem reinen Loopback-Port (verworfen —
+ein zweiter Server oder eine zweite Unit am Leben zu halten, und das Token braucht es
+ohnehin, sobald jemand eine Proxy-Regel ergänzt). Den GitHub-OAuth-Proxy wiederverwenden
+(verworfen — Maschine zu Maschine auf demselben Host, und ein OAuth-Tanz für einen
+Status-Poll ist ein schlechter Tausch). caddy so härten, dass diese Pfade öffentlich 404
+geben (lohnt sich, liegt aber in einem anderen Repo, und das Token hängt nicht davon ab).
+**Konsequenzen:** Ein Fehler behoben, den die API sichtbar gemacht statt verursacht hat:
+`agenten_diff` fiel auf `git show` ohne Commit-Angabe zurück, wenn eine Notiz keine
+menschliche Fassung hatte — und zeigte damit nichts für genau die Notizen, um die es
+geht: vom Agenten angelegt, von niemandem gelesen. Jetzt wird gegen den leeren Baum
+gediffed, die Antwort ist also die ganze Notiz. Gemessen an
+`plan-zentrales-dashboard.md`: 473 Zeilen statt „(keine Historie)".
+Hinweis für wer Phase 4b baut: `offene_punkte` und `graph_check` liegen **nicht hier** —
+sie stehen in `titan/src/titan/tools/`, und titan liefert bereits HTTP aus.

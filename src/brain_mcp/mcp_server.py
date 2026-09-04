@@ -12,6 +12,7 @@ import httpx
 from fastmcp import FastMCP
 from fastmcp.server.auth.oauth_proxy import OAuthProxy
 
+from brain_mcp import read_api
 from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
 from brain_mcp.schemas import Chunk
@@ -683,6 +684,7 @@ def main() -> None:
     """
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     if settings.mcp_transport == "http":
+        read_api.register(mcp)
         log.info("Starting MCP server (http) on %s:%s", settings.mcp_host, settings.mcp_port)
         mcp.run(transport="http", host=settings.mcp_host, port=settings.mcp_port)
     else:

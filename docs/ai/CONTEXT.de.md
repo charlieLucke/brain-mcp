@@ -96,6 +96,12 @@ uv run pytest tests/integration/ -m integration -v  # E2E (benötigt Titan)
 ```
 
 ## Bekannte Fallstricke
+- **caddys Default-Route proxyt alles auf Port 9100 durch den öffentlichen
+  Funnel.** Jeder Pfad, der zum HTTP-Transport dazukommt, ist öffentlich
+  erreichbar, nicht nur `/mcp`. Deshalb prüft `/api/vault/*` selbst ein
+  Bearer-Token, statt einen Loopback-Bind anzunehmen — und wird ohne Token gar
+  nicht registriert.
+
 
 - VS Code zeigt „Package not installed"-Hinweise — das ist das falsche venv (mein-projekt).
   Das `.venv` im Projektverzeichnis hat alle Pakete korrekt.

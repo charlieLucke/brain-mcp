@@ -201,3 +201,33 @@ titan/dashboard experience) — rejected.
   the mirrored bridge).
 - `BRAIN_GITHUB_ALLOWED_LOGINS` was updated to `charlieLucke` in the course of the GitHub
   rename (in `.env`, gitignored).
+
+## 2026-09-05: A read-only HTTP side, gated by a token that is not optional
+**Decision:** Three routes on the existing HTTP transport — `/api/vault/health`,
+`/api/vault/open`, `/api/vault/diff` — returning as JSON what `tools/geprueft.py`
+already computes. Registered only when `BRAIN_READ_TOKEN` is set; without it they do
+not exist. Read only: accepting a note still writes and commits, and that stays with
+`mark_verified` over MCP and with the command line.
+**Reasoning:** The review view that `plan-zentrales-dashboard` calls Phase 4b needs
+these two answers, and they were reachable only from a client that speaks MCP and holds
+an OAuth token — the right shape for Claude, the wrong shape for a dashboard on the same
+machine. The alternative was to make that dashboard an MCP client: a new dependency, a
+token to hold, and a second place where vault logic could drift. Three JSON routes over
+the functions that already exist keep the logic here.
+**The token is the whole gate, and that is deliberate.** caddy's default route proxies
+*everything* on port 9100 through the public funnel — verified: an unauthenticated
+request through :8088 reaches these paths. So there is no loopback to rely on, and no
+default token, and no generated one: unset means the routes are never registered.
+**Alternatives considered:** A second app on a loopback-only port (rejected — a second
+server or a second unit to keep alive, and the token is needed anyway the moment anyone
+adds a proxy rule). Reusing the GitHub OAuth proxy (rejected — machine-to-machine on the
+same host, and an OAuth dance for a status poll is a poor trade). Hardening caddy to 404
+these paths publicly (worth doing, but it lives in another repo and the token does not
+depend on it).
+**Consequences:** Fixed a bug the API exposed rather than caused: `agenten_diff` fell
+back to `git show` with no commit when a note had no human version, which showed nothing
+for exactly the notes that need review — a note the agent created and nobody has read.
+It now diffs against the empty tree, so the answer is the whole note. Measured on
+`plan-zentrales-dashboard.md`: 473 lines instead of "(keine Historie)".
+Note for whoever builds Phase 4b: `offene_punkte` and `graph_check` are **not here** —
+they live in `titan/src/titan/tools/`, and titan already serves HTTP.

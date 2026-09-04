@@ -88,11 +88,22 @@ def letzte_menschliche_fassung(pfad: Path) -> str | None:
     return None
 
 
+# Der leere Git-Baum. Basis fuer eine Notiz, die noch nie ein Mensch angefasst
+# hat: dann ist "was noch niemand gelesen hat" die ganze Datei.
+LEERER_BAUM = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+
+
 def agenten_diff(pfad: Path) -> str:
-    basis = letzte_menschliche_fassung(pfad)
-    if basis is None:
-        return _git("show", "--format=", "--", str(pfad)) or "(keine Historie)"
-    return _git("diff", f"{basis}..HEAD", "--", str(pfad))
+    """Was sich seit der letzten menschlichen Fassung geaendert hat.
+
+    Gibt es keine, ist die Antwort **die ganze Notiz** und nicht nichts. Vorher
+    stand hier ``git show`` ohne Commit-Angabe, was den letzten Commit fuer diesen
+    Pfad zeigt — und leer ausgeht, sobald der letzte Commit die Datei nicht
+    beruehrt hat. Fuer genau die Notizen, um die es geht (vom Agenten angelegt,
+    von niemandem gelesen), zeigte das Werkzeug damit nichts.
+    """
+    basis = letzte_menschliche_fassung(pfad) or LEERER_BAUM
+    return _git("diff", f"{basis}..HEAD", "--", str(pfad)) or "(keine Aenderung)"
 
 
 def abnehmen(pfad: Path, quelle: str) -> str:
