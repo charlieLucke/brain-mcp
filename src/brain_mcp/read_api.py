@@ -10,8 +10,10 @@ that speaks MCP and holds an OAuth token. That is the right shape for Claude and
 the wrong shape for a dashboard on the same machine, so these three routes expose
 the same data as JSON.
 
-**Read only, and deliberately so.** Accepting a note writes to the vault and
-commits; that stays with `mark_verified` over MCP and with the command line.
+Accepting a note is the one write here, added on 2026-09-05 so the review view can
+be finished in a browser rather than requiring a remembered command. It goes
+through the same `abnehmen()` the command line uses — including its refusal of an
+invented `quelle`, which is the point of the field.
 
 **The token is not optional.** caddy's default route proxies everything on this
 port through the public funnel, so a route here is publicly reachable whether or
@@ -30,8 +32,13 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from brain_mcp.config import settings
-from brain_mcp.tools.geprueft import agenten_diff, letzte_menschliche_fassung, offene_notizen
-from brain_mcp.vault_writer import VaultWriteError, resolve_note_path
+from brain_mcp.tools.geprueft import (
+    abnehmen,
+    agenten_diff,
+    letzte_menschliche_fassung,
+    offene_notizen,
+)
+from brain_mcp.vault_writer import QUELLE_AGENT, QUELLEN, VaultWriteError, resolve_note_path
 
 log = logging.getLogger(__name__)
 
@@ -73,7 +80,9 @@ async def open_notes(request: Request) -> Response:
         {"path": _relative(path), "quelle": quelle, "geprueft": geprueft}
         for path, quelle, geprueft in offene_notizen(nur_agent=nur_agent)
     ]
-    return JSONResponse({"notes": notes})
+    # The allowed provenance values ride along: accepting requires one, and a
+    # client that had to hard-code the list would drift from vault_writer.
+    return JSONResponse({"notes": notes, "quellen": sorted(QUELLEN - {QUELLE_AGENT})})
 
 
 async def note_diff(request: Request) -> Response:
@@ -104,6 +113,51 @@ async def note_diff(request: Request) -> Response:
     )
 
 
+async def accept_note(request: Request) -> Response:
+    """Record that a note's claims were checked, and commit it.
+
+    Body:
+        path: The note, vault-relative or a bare file name.
+        quelle: How the content is evidenced — one of the values `/api/vault/open`
+            returns. Required, and `agent-entwurf` is refused: a note cannot be
+            accepted as still being an agent draft.
+
+    Returns:
+        The new `geprueft` date and the commit.
+
+    The only write on this side, and it goes through the same `abnehmen()` as the
+    command line — including that it commits as the agent author, exactly as
+    `mark_verified` and `geprueft --ok` do. An invented date would take the note
+    out of `list_stale` forever, which is why the caller has to say *how* it is
+    evidenced rather than merely that it is.
+    """
+    if not _authorized(request):
+        return _unauthorized()
+    try:
+        payload = await request.json()
+    except ValueError:
+        return JSONResponse({"detail": "body must be JSON"}, status_code=400)
+    if not isinstance(payload, dict):
+        return JSONResponse({"detail": "body must be a JSON object"}, status_code=400)
+
+    raw = str(payload.get("path", ""))
+    quelle = str(payload.get("quelle", ""))
+    if not raw:
+        return JSONResponse({"detail": "path is required"}, status_code=400)
+    if not quelle:
+        erlaubt = ", ".join(sorted(QUELLEN - {QUELLE_AGENT}))
+        return JSONResponse({"detail": f"quelle is required, one of {erlaubt}"}, status_code=400)
+
+    try:
+        path = resolve_note_path(raw, must_exist=True)
+        commit = abnehmen(path, quelle)
+    except VaultWriteError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=400)
+
+    log.info("note accepted over HTTP: %s (quelle=%s)", _relative(path), quelle)
+    return JSONResponse({"path": _relative(path), "quelle": quelle, "commit": commit})
+
+
 async def health(request: Request) -> Response:
     """Say the read side is up and how many notes are waiting.
 
@@ -129,5 +183,6 @@ def register(mcp: Any) -> bool:
     mcp.custom_route("/api/vault/health", methods=["GET"])(health)
     mcp.custom_route("/api/vault/open", methods=["GET"])(open_notes)
     mcp.custom_route("/api/vault/diff", methods=["GET"])(note_diff)
+    mcp.custom_route("/api/vault/accept", methods=["POST"])(accept_note)
     log.info("read API registered at /api/vault/*")
     return True

@@ -27,6 +27,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
             Route("/api/vault/health", read_api.health),
             Route("/api/vault/open", read_api.open_notes),
             Route("/api/vault/diff", read_api.note_diff),
+            Route("/api/vault/accept", read_api.accept_note, methods=["POST"]),
         ]
     )
     return TestClient(app)
@@ -83,7 +84,12 @@ def test_routes_are_registered_with_a_token(monkeypatch: pytest.MonkeyPatch) -> 
             return lambda fn: fn
 
     assert read_api.register(FakeMCP()) is True
-    assert registered == ["/api/vault/health", "/api/vault/open", "/api/vault/diff"]
+    assert registered == [
+        "/api/vault/health",
+        "/api/vault/open",
+        "/api/vault/diff",
+        "/api/vault/accept",
+    ]
 
 
 # --- the data -------------------------------------------------------------
@@ -158,3 +164,85 @@ def test_diff_is_against_the_last_human_version(
     body = client.get("/api/vault/diff?path=x.md", headers=_auth()).json()
 
     assert body == {"path": "notes/x.md", "base": "abc123", "diff": "@@ -1 +1 @@\n-a\n+b\n"}
+
+
+# --- accepting a note: the one write ---------------------------------------
+
+
+def test_accept_needs_a_token(client: TestClient) -> None:
+    """The only write here must not be the one route that forgot the gate."""
+    resp = client.post("/api/vault/accept", json={"path": "x.md", "quelle": "gemessen"})
+    assert resp.status_code == 401
+
+
+def test_accept_requires_a_quelle(client: TestClient) -> None:
+    """An invented date takes a note out of list_stale forever, so the caller has
+    to say how the content is evidenced rather than merely that it is."""
+    resp = client.post("/api/vault/accept", json={"path": "x.md"}, headers=_auth())
+    assert resp.status_code == 400
+    assert "quelle is required" in resp.json()["detail"]
+
+
+def test_accept_requires_a_path(client: TestClient) -> None:
+    resp = client.post("/api/vault/accept", json={"quelle": "gemessen"}, headers=_auth())
+    assert resp.status_code == 400
+
+
+def test_accept_refuses_agent_entwurf(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A note cannot be accepted as still being an agent draft — abnehmen() says so
+    and this must not route around it."""
+    from brain_mcp.vault_writer import VaultWriteError
+
+    note = tmp_path / "notes" / "x.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("x")
+    monkeypatch.setattr(read_api.settings, "vault_root", tmp_path)
+    monkeypatch.setattr(
+        read_api, "resolve_note_path", lambda file_path, must_exist, domain=None: note
+    )
+
+    def refuse(pfad: Path, quelle: str) -> str:
+        raise VaultWriteError("--quelle muss eins von gemessen, recherchiert sein")
+
+    monkeypatch.setattr(read_api, "abnehmen", refuse)
+
+    resp = client.post(
+        "/api/vault/accept", json={"path": "x.md", "quelle": "agent-entwurf"}, headers=_auth()
+    )
+
+    assert resp.status_code == 400
+    assert "quelle" in resp.json()["detail"]
+
+
+def test_accept_returns_the_commit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    note = tmp_path / "notes" / "x.md"
+    note.parent.mkdir(parents=True)
+    note.write_text("x")
+    monkeypatch.setattr(read_api.settings, "vault_root", tmp_path)
+    monkeypatch.setattr(
+        read_api, "resolve_note_path", lambda file_path, must_exist, domain=None: note
+    )
+    monkeypatch.setattr(read_api, "abnehmen", lambda pfad, quelle: "abc1234")
+
+    resp = client.post(
+        "/api/vault/accept", json={"path": "x.md", "quelle": "gemessen"}, headers=_auth()
+    )
+
+    assert resp.status_code == 200
+    assert resp.json() == {"path": "notes/x.md", "quelle": "gemessen", "commit": "abc1234"}
+
+
+def test_open_hands_out_the_allowed_quellen(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A client that hard-coded the list would drift from vault_writer."""
+    monkeypatch.setattr(read_api, "offene_notizen", lambda nur_agent: [])
+
+    body = client.get("/api/vault/open", headers=_auth()).json()
+
+    assert "agent-entwurf" not in body["quellen"]
+    assert "gemessen" in body["quellen"]
