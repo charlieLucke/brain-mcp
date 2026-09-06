@@ -32,7 +32,29 @@ class GitHubAllowlistVerifier(GitHubTokenVerifier):
     def __init__(
         self, *, allowed_logins: set[str], required_scopes: list[str] | None = None
     ) -> None:
+        """Build the verifier.
+
+        Args:
+            allowed_logins: GitHub logins permitted to use this server. Compared
+                lowercased, so the case GitHub reports does not matter.
+            required_scopes: Scopes the token must carry, passed to the base class.
+
+        Raises:
+            RuntimeError: If the allowlist is empty. An empty allowlist admits nobody,
+                which is a working state here — every request is refused — and that is
+                exactly the problem: it looks identical to a broken server, and the
+                caller cannot tell "nobody is allowed" from "the setting never
+                arrived". `_build_auth` checks the raw environment string, which
+                `","` would satisfy while parsing to nothing.
+        """
         super().__init__(required_scopes=required_scopes)
+        if not allowed_logins:
+            raise RuntimeError(
+                "GitHubAllowlistVerifier was built with an empty allowlist. It would "
+                "refuse every request, which is safe but indistinguishable from an "
+                "outage — set BRAIN_GITHUB_ALLOWED_LOGINS to the logins that may "
+                "reach this server."
+            )
         self._allowed_logins = {login.lower() for login in allowed_logins}
 
     async def verify_token(self, token: str) -> AccessToken | None:
