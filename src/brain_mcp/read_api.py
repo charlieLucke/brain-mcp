@@ -159,10 +159,12 @@ async def accept_note(request: Request) -> Response:
 
 
 async def health(request: Request) -> Response:
-    """Say the read side is up and how many notes are waiting.
+    """Say the read side is up, and nothing else.
 
     Unauthenticated on purpose and deliberately thin: it answers "is this reachable
-    and configured", which a caller needs *before* it has a token to try.
+    and configured", which a caller needs *before* it has a token to try. It carries
+    no count and no note — an endpoint anyone can reach must stay boring, or it
+    becomes a way to watch the vault without holding the token.
     """
     return JSONResponse({"status": "ok", "read_api": True})
 
