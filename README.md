@@ -5,7 +5,7 @@ Connector an Claude anbindet — plus ein Vault-Watcher, der einen Obsidian-Vaul
 automatisch durchsuchbar hält.**
 
 Über das [Model Context Protocol](https://modelcontextprotocol.io) (MCP) kann
-Claude externe Werkzeuge aufrufen. brain-mcp stellt sechs solcher Werkzeuge bereit
+Claude externe Werkzeuge aufrufen. brain-mcp stellt zwölf solcher Werkzeuge bereit
 und beantwortet sie aus
 **[titan](https://github.com/charlieLucke/titan)** — dem lokalen RAG-System
 (separates Repo), das die eigentliche semantische Suche über den Vault übernimmt.
@@ -17,10 +17,12 @@ flowchart LR
     OIW["obsidian-inbox-watcher<br/>Dokumente → Notizen"]
     T["titan<br/>RAG-Engine (Index + Suche)"]
     BM["brain-mcp<br/>MCP-Server für Claude"]
+    HB["homebase<br/>Web-Control-Panel"]
     C(("Claude"))
     OIW -->|".md-Notizen"| T
-    BM -->|"HTTP: /search, /ingest"| T
+    BM -->|"HTTP: /search, /ingest/file"| T
     C <-->|"MCP-Tools"| BM
+    HB -.->|"Status · Start/Stopp · Logs"| T
     classDef here fill:#2b6cb0,stroke:#1a365d,color:#fff,stroke-width:2px;
     class BM here
 ```
@@ -42,6 +44,19 @@ brain-mcp besteht aus zwei Diensten:
 | `list_notes` | Jede indexierte Notiz auflisten, mit Domain + Chunk-Anzahl. |
 | `ingest_note` | Eine Notiz sofort neu indexieren, unter Umgehung der Watcher-Verzögerung. |
 | `delete_note` | Eine Notiz de-indexieren (entfernt nur ihre Chunks; die Datei auf der Platte bleibt). |
+
+Die sechs oben lesen und indexieren. Die folgenden sechs schreiben in den Vault
+selbst — sie sind der Grund, warum der HTTP-Modus eine Allowlist braucht und nicht
+bloß eine Anmeldung:
+
+| Werkzeug | Zweck |
+|---|---|
+| `vault_style` | Die Hausform für Notizen in diesem Vault. Vor jedem Schreiben oder Ändern aufzurufen. |
+| `write_note` | Eine **neue** Notiz anlegen. Schlägt fehl, wenn die Datei schon existiert. |
+| `edit_note` | Eine exakte Passage in einer bestehenden Notiz ersetzen — mit `content_hash`, damit nicht auf einen Stand geschrieben wird, den jemand inzwischen geändert hat. |
+| `append_section` | Einen Abschnitt an eine bestehende Notiz anhängen. |
+| `mark_verified` | Festhalten, dass die Aussagen einer Notiz heute gegen die Wirklichkeit geprüft wurden. |
+| `list_stale` | Notizen finden, deren Aussagen womöglich nicht mehr stimmen (nach Alter, optional je Domain). |
 
 ## Deployment & Sicherheit (das technisch Interessante)
 
@@ -71,6 +86,8 @@ Vollständige Schritt-für-Schritt-Anleitung: **[`deploy/README.md`](deploy/READ
 - **[titan](https://github.com/charlieLucke/titan)** — die RAG-Engine
   (Indexierung + hybride Suche über Qdrant).
 - **brain-mcp** *(du bist hier)* — bindet titan über MCP an Claude an.
+- **[homebase](https://github.com/charlieLucke/homebase)** — das Web-Control-Panel:
+  Status, Logs und Start/Stopp der Dienste. Steht daneben, nicht im Datenpfad.
 
 ## Transport-Modi
 
