@@ -202,8 +202,13 @@ def git_commit(paths: list[Path], subject: str, body: str = "") -> str:
     nachricht = f"{subject}\n\n{body}".strip() if body else subject
 
     def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", str(root), *args], capture_output=True, text=True, timeout=60
+        return subprocess.run(  # noqa: S603 — Listenargumente, keine Shell; die Argumente kommen nicht vom Nutzer
+            # noqa-Begruendung: `git` bewusst ueber den PATH, nicht auf eine
+            # Distribution festgenagelt.
+            ["git", "-C", str(root), *args],  # noqa: S607
+            capture_output=True,
+            text=True,
+            timeout=60,
         )
 
     add = git("add", "--", *[str(p) for p in paths])

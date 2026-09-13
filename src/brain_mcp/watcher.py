@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import signal
 import threading
 import time
 from pathlib import Path
@@ -391,7 +392,7 @@ class VaultWatcher:
             log.warning("Titan unreachable, cooling down for %.0fs", self._COOLDOWN_SECONDS)
             self._titan_dead_until = time.monotonic() + self._COOLDOWN_SECONDS
             return False
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 — ein fehlgeschlagener Health-Check darf den Watcher nicht beenden; Cooldown statt Absturz
             log.warning("Titan health check failed unexpectedly: %s", exc)
             self._titan_dead_until = time.monotonic() + self._COOLDOWN_SECONDS
             return False
@@ -404,8 +405,6 @@ class VaultWatcher:
 
 def main() -> None:
     """Run the vault watcher daemon."""
-    import signal
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",

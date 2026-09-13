@@ -18,7 +18,7 @@ from fastmcp.server.auth.providers.github import GitHubTokenVerifier
 log = logging.getLogger(__name__)
 
 _GITHUB_AUTHORIZE_ENDPOINT = "https://github.com/login/oauth/authorize"
-_GITHUB_TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"
+_GITHUB_TOKEN_ENDPOINT = "https://github.com/login/oauth/access_token"  # noqa: S105 — das ist der Name bzw. die URL, nicht der Wert
 
 
 class GitHubAllowlistVerifier(GitHubTokenVerifier):

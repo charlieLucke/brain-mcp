@@ -42,8 +42,8 @@ AGENT_AUTOR = "Claude (brain-mcp)"
 
 
 def _git(*args: str) -> str:
-    fertig = subprocess.run(
-        ["git", "-C", str(settings.vault_root.resolve()), *args],
+    fertig = subprocess.run(  # noqa: S603 — Listenargumente, keine Shell; die Argumente kommen nicht vom Nutzer
+        ["git", "-C", str(settings.vault_root.resolve()), *args],  # noqa: S607 — `git` absichtlich ueber den PATH, nicht auf eine Distribution festgenagelt
         capture_output=True,
         text=True,
         check=False,
