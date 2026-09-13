@@ -1,114 +1,117 @@
-# Project Context — brain-mcp
+# Projektkontext — brain-mcp
 
-> Read this first. Keep under 200 lines. Update as the project evolves.
+> Zuerst lesen. Unter 200 Zeilen halten. Mit der Weiterentwicklung des Projekts aktualisieren.
 
-## What this project does
+## Was dieses Projekt macht
 
-brain-mcp is an MCP server and vault watcher for Claude. It makes the personal
-Obsidian vault searchable by delegating Markdown notes to the Titan RAG service
-(running as a systemd user daemon) and exposing a set of tools to Claude over MCP.
+brain-mcp ist ein MCP-Server und Vault-Watcher für Claude. Es macht den persönlichen
+Obsidian-Vault durchsuchbar, indem es Markdown-Notizen an den Titan-RAG-Service
+delegiert (der als systemd-User-Daemon läuft) und Claude über MCP eine Reihe von Tools
+bereitstellt.
 
-## Architecture
+## Architektur
 
 ```
 Obsidian (Windows) → Vault (F:\vault\) → brain-watcher (watchdog)
                                             │ HTTP POST /ingest/file
                                             ▼
-                                     titan-service :8765  (separate repo)
+                                     titan-service :8765  (separates Repo)
                                             ▲
-Claude ──(stdio | HTTP/Funnel connector)──► brain-mcp    │ HTTP /search etc.
+Claude ──(stdio | HTTP/Funnel-Connector)──► brain-mcp    │ HTTP /search usw.
 ```
 
-- **brain-watcher**: systemd user daemon, watches the vault recursively, debounces
-  30s, re-indexes changed `.md` files via the Titan service. Reconnect logic with
-  exponential backoff.
-- **brain-mcp**: the MCP server. Transport is `stdio` (the default — e.g. launched
-  by Claude Desktop as a subprocess) or Streamable-HTTP (the deployed mode: a
-  systemd user service `brain-mcp` on port 9100, exposed via the Tailscale Funnel
-  as a Claude custom connector and gated by GitHub OAuth). Six MCP tools:
+- **brain-watcher**: systemd-User-Daemon, überwacht den Vault rekursiv, debounct
+  30s, indexiert geänderte `.md`-Dateien über den Titan-Service neu. Reconnect-Logik mit
+  exponentiellem Backoff.
+- **brain-mcp**: der MCP-Server. Transport ist `stdio` (der Default — z. B. von
+  Claude Desktop als Subprozess gestartet) oder Streamable-HTTP (der deployte Modus: ein
+  systemd-User-Service `brain-mcp` auf Port 9100, über die Tailscale-Funnel
+  als Claude-Custom-Connector exponiert und durch GitHub-OAuth abgesichert). Sechs MCP-Tools:
   `query_knowledge`, `ingest_note`, `list_domains`, `find_related`, `list_notes`,
   `delete_note`.
 
 ## Stack
 
-- **Language:** Python 3.12+
-- **Package manager:** uv
-- **MCP:** FastMCP (stdio + Streamable-HTTP transport)
-- **HTTP:** httpx + tenacity (retry 3x, exp backoff)
-- **Settings:** pydantic-settings (env prefix: BRAIN_)
+- **Sprache:** Python 3.12+
+- **Paketmanager:** uv
+- **MCP:** FastMCP (stdio- + Streamable-HTTP-Transport)
+- **HTTP:** httpx + tenacity (Retry 3×, exp. Backoff)
+- **Settings:** pydantic-settings (Env-Präfix: BRAIN_)
 - **Watcher:** watchdog
-- **Test runner:** pytest
-- **Lint/format:** ruff (line length 100, double quotes)
-- **Type checker:** mypy (strict, with overrides for watchdog/mcp/tenacity)
+- **Test-Runner:** pytest
+- **Lint/Format:** ruff (Zeilenlänge 100, doppelte Anführungszeichen)
+- **Typprüfer:** mypy (strict, mit Overrides für watchdog/mcp/tenacity)
 - **CI:** GitHub Actions
 
-## Layout
+## Aufbau
 
 ```
 src/brain_mcp/
 ├── config.py        # Settings: BRAIN_TITAN_URL, BRAIN_VAULT_ROOT, BRAIN_DEBOUNCE_SECONDS, BRAIN_MCP_*
-├── schemas.py       # Pydantic schemas (local copy of the Titan API schemas)
-├── titan_client.py  # TitanClient (httpx, retry via tenacity)
-├── mcp_server.py    # FastMCP server + the six tools
-└── watcher.py       # VaultWatcher (watchdog, debounce, reconnect)
+├── schemas.py       # Pydantic-Schemas (lokale Kopie der Titan-API-Schemas)
+├── titan_client.py  # TitanClient (httpx, Retry via tenacity)
+├── mcp_server.py    # FastMCP-Server + die sechs Tools
+└── watcher.py       # VaultWatcher (watchdog, Debounce, Reconnect)
 deploy/
-├── brain-watcher.service  # systemd user service (vault watcher)
-├── brain-mcp.service      # systemd user service (HTTP MCP server)
-└── README.md              # activation guide + connector setup
+├── brain-watcher.service  # systemd-User-Service (Vault-Watcher)
+├── brain-mcp.service      # systemd-User-Service (HTTP-MCP-Server)
+└── README.md              # Aktivierungsanleitung + Connector-Setup
 tests/
 ├── test_titan_client.py   # httpx.MockTransport
 ├── test_mcp_tools.py       # patch(_client.method)
-├── test_watcher.py         # mock TitanClient, unit + integration
+├── test_watcher.py         # mock TitanClient, Unit + Integration
 └── integration/
-    └── test_e2e_pipeline.py  # polling (no sleep), needs a live Titan service
+    └── test_e2e_pipeline.py  # Polling (kein sleep), benötigt einen laufenden Titan-Service
 ```
 
-## Environment Variables (BRAIN_ prefix)
+## Umgebungsvariablen (BRAIN_-Präfix)
 
-| Variable | Default | Meaning |
+| Variable | Default | Bedeutung |
 |---|---|---|
-| BRAIN_TITAN_URL | http://127.0.0.1:8765 | Titan service URL |
-| BRAIN_VAULT_ROOT | /mnt/f/vault | Obsidian vault root (example path; adapt to your setup) |
-| BRAIN_DEBOUNCE_SECONDS | 30.0 | Debounce window for the watcher |
-| BRAIN_MCP_TRANSPORT | stdio | `stdio` or `http` (for Claude custom connectors) |
-| BRAIN_MCP_HOST | 127.0.0.1 | HTTP bind host (set `0.0.0.0` in deployment) |
-| BRAIN_MCP_PORT | 9100 | HTTP bind port |
-| BRAIN_MCP_AUTH | none | `none` or `github` (required once publicly reachable) |
-| BRAIN_MCP_BASE_URL | (empty) | public base URL, e.g. `https://host.ts.net` |
-| BRAIN_GITHUB_CLIENT_ID / _SECRET | (empty) | GitHub OAuth app credentials |
-| BRAIN_GITHUB_ALLOWED_LOGINS | (empty) | comma-separated GitHub logins with access |
+| BRAIN_TITAN_URL | http://127.0.0.1:8765 | Titan-Service-URL |
+| BRAIN_VAULT_ROOT | /mnt/f/vault | Obsidian-Vault-Root (Beispielpfad; an dein Setup anpassen) |
+| BRAIN_DEBOUNCE_SECONDS | 30.0 | Debounce-Fenster für den Watcher |
+| BRAIN_MCP_TRANSPORT | stdio | `stdio` oder `http` (für Claude-Custom-Connectors) |
+| BRAIN_MCP_HOST | 127.0.0.1 | HTTP-Bind-Host (im Deployment `0.0.0.0` setzen) |
+| BRAIN_MCP_PORT | 9100 | HTTP-Bind-Port |
+| BRAIN_MCP_AUTH | none | `none` oder `github` (erforderlich, sobald öffentlich erreichbar) |
+| BRAIN_MCP_BASE_URL | (leer) | öffentliche Basis-URL, z. B. `https://host.ts.net` |
+| BRAIN_GITHUB_CLIENT_ID / _SECRET | (leer) | GitHub-OAuth-App-Credentials |
+| BRAIN_GITHUB_ALLOWED_LOGINS | (leer) | kommagetrennte GitHub-Logins mit Zugriff |
 
-## Conventions
+## Konventionen
 
-- All conventions from CLAUDE.md (ruff, mypy strict, snake_case, Google docstrings, etc.)
-- MCP tool return values are always Markdown strings, never JSON
-- Path validation against VAULT_ROOT happens both client-side (MCP) AND server-side (Titan)
+- Alle Konventionen aus CLAUDE.md (ruff, mypy strict, snake_case, Google-Docstrings usw.)
+- MCP-Tool-Rückgabewerte sind immer Markdown-Strings, niemals JSON
+- Pfadvalidierung gegen VAULT_ROOT erfolgt sowohl clientseitig (MCP) ALS AUCH serverseitig (Titan)
 
-## Commands
+## Befehle
 
 ```bash
-make install          # deps + pre-commit hooks
-make check            # lint + types + tests
-make test             # pytest with coverage
-make test-fast        # without slow + integration
-uv run pytest tests/integration/ -m integration -v  # E2E (needs Titan)
+make install          # Abhängigkeiten + pre-commit-Hooks
+make check            # Lint + Typen + Tests
+make test             # pytest mit Coverage
+make test-fast        # ohne langsame + Integration
+uv run pytest tests/integration/ -m integration -v  # E2E (benötigt Titan)
 ```
 
-## Known pitfalls
-- **caddy's default route proxies everything on port 9100 through the public
-  funnel.** Any path added to the HTTP transport is publicly reachable, not just
-  `/mcp`. That is why `/api/vault/*` checks a bearer token itself rather than
-  assuming a loopback bind, and why it is not registered at all without one.
+## Bekannte Fallstricke
+- **caddys Default-Route proxyt alles auf Port 9100 durch den öffentlichen
+  Funnel.** Jeder Pfad, der zum HTTP-Transport dazukommt, ist öffentlich
+  erreichbar, nicht nur `/mcp`. Deshalb prüft `/api/vault/*` selbst ein
+  Bearer-Token, statt einen Loopback-Bind anzunehmen — und wird ohne Token gar
+  nicht registriert.
 
 
-- VS Code shows "Package not installed" hints — that's the wrong venv (mein-projekt).
-  The `.venv` in the project directory has all packages correct.
-- The pre-commit mypy hook needs `additional_dependencies` in `.pre-commit-config.yaml`.
-- `@mcp.tool()` and tenacity `@_RETRY` are untyped decorators → pyproject.toml override
-  `disable_error_code = ["untyped-decorator", "no-any-return"]` for the affected modules.
-- `watchdog` has no type stubs → `ignore_missing_imports = true` in pyproject.toml.
-- In `stdio` transport brain-mcp is launched by Claude Desktop as a subprocess; in the
-  deployed `http` transport it runs as the systemd user service `brain-mcp`.
-- systemd unit: use `Wants=` (NOT `Requires=`) so the watcher survives a Titan restart.
-- Bind the HTTP server to `0.0.0.0`, not `127.0.0.1`: under WSL2 mirrored networking a
-  loopback-only bind is unreachable from the Windows-side Tailscale Funnel (→ 502).
+- VS Code zeigt „Package not installed"-Hinweise — das ist das falsche venv (mein-projekt).
+  Das `.venv` im Projektverzeichnis hat alle Pakete korrekt.
+- Der pre-commit mypy-Hook braucht `additional_dependencies` in `.pre-commit-config.yaml`.
+- `@mcp.tool()` und tenacity `@_RETRY` sind untypisierte Dekoratoren → pyproject.toml-Override
+  `disable_error_code = ["untyped-decorator", "no-any-return"]` für die betroffenen Module.
+- `watchdog` hat keine Type-Stubs → `ignore_missing_imports = true` in pyproject.toml.
+- Im `stdio`-Transport wird brain-mcp von Claude Desktop als Subprozess gestartet; im
+  deployten `http`-Transport läuft es als systemd-User-Service `brain-mcp`.
+- systemd-Unit: `Wants=` verwenden (NICHT `Requires=`), damit der Watcher einen Titan-Neustart überlebt.
+- Den HTTP-Server an `0.0.0.0` binden, nicht `127.0.0.1`: unter WSL2 Mirrored Networking ist ein
+  reiner Loopback-Bind von der Windows-seitigen Tailscale-Funnel aus unerreichbar (→ 502).
+```

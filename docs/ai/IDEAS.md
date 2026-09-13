@@ -1,14 +1,14 @@
-# Ideas
+# Ideen
 
-> Out-of-scope ideas captured during work, to revisit later.
-> Nothing here is committed. This is a parking lot.
+> Out-of-Scope-Ideen, die während der Arbeit festgehalten werden, um sie später wieder aufzugreifen.
+> Nichts hier ist verbindlich. Das ist ein Parkplatz.
 
 ## Format
-- [ ] **YYYY-MM-DD:** Idea description. Why it matters. Rough effort estimate.
+- [ ] **JJJJ-MM-TT:** Ideenbeschreibung. Warum sie wichtig ist. Grobe Aufwandsschätzung.
 
 ---
 
-## Pending
+## Ausstehend
 
 - [x] **2026-06-20: WSL-Mirrored-Watchdog entschärfen + auf Resume triggern.**
       ✅ **Hinfällig seit 2026-06-22 (Umstieg auf NAT):** der Watchdog ist deaktiviert —
@@ -40,11 +40,10 @@
       verlagern (hat das Windows↔WSL-Problem gar nicht; passt zur Zwei-Tier-Architektur);
       (c) **NAT + `netsh portproxy`** für Port 9100 (mit dynamischem WSL-IP-Update).
       (b) ist strategisch am saubersten. *Effort: Medium–High; eigener Plan.*
-
-- [ ] **2026-06-01: Cache the GitHub allowlist check per token.** The
-      `GitHubAllowlistVerifier` calls GitHub `GET /user` (+ `/user/repos`) on *every*
-      MCP request to resolve the login — visible in the logs as a burst of
-      `api.github.com` calls per request. That is needlessly chatty and risks the
-      GitHub API rate limit under load. Cache the verified login per access token with
-      a short TTL (e.g. 60–300 s) so repeat requests skip the GitHub round-trip.
-      Effort: Low.
+- [ ] **2026-06-01: Den GitHub-Allowlist-Check pro Token cachen.** Der
+      `GitHubAllowlistVerifier` ruft bei *jedem* MCP-Request GitHub `GET /user`
+      (+ `/user/repos`) auf, um den Login aufzulösen — in den Logs sichtbar als ein Schwall
+      von `api.github.com`-Aufrufen pro Request. Das ist unnötig geschwätzig und riskiert das
+      GitHub-API-Rate-Limit unter Last. Den verifizierten Login pro Access-Token mit
+      kurzer TTL cachen (z. B. 60–300 s), sodass wiederholte Requests den GitHub-Round-Trip überspringen.
+      Aufwand: Niedrig.

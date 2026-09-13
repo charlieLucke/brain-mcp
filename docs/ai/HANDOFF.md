@@ -1,211 +1,210 @@
-# Handoff – 2026-05-22
-Model: Claude Opus 4.7
+# Übergabe – 2026-05-22
+Modell: Claude Opus 4.7
 
-## Done in this session
+## In dieser Sitzung erledigt
 
-**Connector outage fixed — the cause was infrastructure, not the OAuth code.**
-After a PC restart the custom connector failed with "couldn't reach" / `start_error`.
-OAuth code verified locally (`/mcp`→401, discovery→200, `POST /register`→201).
-Found and fixed two real causes:
+**Connector-Ausfall behoben — die Ursache war die Infrastruktur, nicht der OAuth-Code.**
+Nach einem PC-Neustart scheiterte der Custom Connector mit „couldn't reach" / `start_error`.
+OAuth-Code lokal verifiziert (`/mcp`→401, Discovery→200, `POST /register`→201).
+Zwei reale Ursachen gefunden und behoben:
 
-1. **`Linger=no`** → systemd user services die as soon as WSL goes idle → brain-mcp
-   gone → Funnel points at nothing. Fix: `loginctl enable-linger charl` (persistent).
-2. **`BRAIN_MCP_HOST=127.0.0.1`** → under WSL2 mirrored networking, unreachable from
-   Windows/Funnel (502). Fix: `BRAIN_MCP_HOST=0.0.0.0` in `deploy/brain-mcp.service`.
-   Proof: dashboard (`0.0.0.0:9200`) from Windows = 200, brain-mcp (`127.0.0.1:9100`)
-   = unreachable; after `0.0.0.0` → Funnel 401.
+1. **`Linger=no`** → systemd-User-Services sterben, sobald WSL in den Leerlauf geht → brain-mcp
+   weg → Funnel zeigt ins Leere. Fix: `loginctl enable-linger charl` (persistent).
+2. **`BRAIN_MCP_HOST=127.0.0.1`** → unter WSL2 Mirrored Networking von
+   Windows/Funnel unerreichbar (502). Fix: `BRAIN_MCP_HOST=0.0.0.0` in `deploy/brain-mcp.service`.
+   Beweis: Dashboard (`0.0.0.0:9200`) von Windows = 200, brain-mcp (`127.0.0.1:9100`)
+   = unerreichbar; nach `0.0.0.0` → Funnel 401.
 
-Also: updated `BRAIN_GITHUB_ALLOWED_LOGINS` to `charlieLucke` (GitHub rename), rolled
-fastmcp back to 3.2.4 as a test and back to lock-consistent 3.3.1 (not the cause).
-Docs updated (deploy/README, DECISIONS, CONTEXT, this handoff). **End-to-end verified:
-the connector connects again, brain tools live.**
+Außerdem: `BRAIN_GITHUB_ALLOWED_LOGINS` auf `charlieLucke` aktualisiert (GitHub-Rename), fastmcp
+testweise auf 3.2.4 zurück- und wieder auf lock-konsistentes 3.3.1 gerollt (nicht die Ursache).
+Docs aktualisiert (deploy/README, DECISIONS, CONTEXT, diese Übergabe). **End-to-end verifiziert:
+der Connector verbindet wieder, brain-Tools live.**
 
-## Operational setup (as of today)
+## Betriebliches Setup (Stand heute)
 
-- brain-mcp: HTTP on `0.0.0.0:9100`, linger active → services stay running.
-- Connector URL unchanged: `https://<your-tailnet-host>.ts.net/mcp`.
-- "`linked` instead of `enabled`" still applies — a stop for gaming stays in effect;
-  linger just no longer kills services when idle.
+- brain-mcp: HTTP auf `0.0.0.0:9100`, Linger aktiv → Services bleiben laufend.
+- Connector-URL unverändert: `https://<your-tailnet-host>.ts.net/mcp`.
+- „`linked` statt `enabled`" gilt weiterhin — ein Stop fürs Gaming bleibt in Kraft;
+  Linger killt nur nicht mehr Services im Leerlauf.
 
-## Open / Next steps
+## Offen / Nächste Schritte
 
-- Docker Desktop was off last → qdrant/titan down; for real queries bring the RAG
-  stack up (Docker Desktop → qdrant → titan). Optional: Docker autostart.
+- Docker Desktop war zuletzt aus → qdrant/titan unten; für echte Queries den RAG-
+  Stack hochfahren (Docker Desktop → qdrant → titan). Optional: Docker-Autostart.
 
 ---
 
-# Handoff – 2026-05-17
-Model: Claude Opus 4.7
+# Übergabe – 2026-05-17
+Modell: Claude Opus 4.7
 
-## Done in this session
+## In dieser Sitzung erledigt
 
-**Stage 2 — vault-admin.** Two new MCP tools in the `brain` server (now 6 tools).
+**Stage 2 — vault-admin.** Zwei neue MCP-Tools im `brain`-Server (jetzt 6 Tools).
 
-**Code changes:**
-- `src/brain_mcp/schemas.py` — new schemas `NoteInfo`, `NotesResponse`
+**Code-Änderungen:**
+- `src/brain_mcp/schemas.py` — neue Schemas `NoteInfo`, `NotesResponse`
 - `src/brain_mcp/titan_client.py` — `TitanClient.list_notes()` (GET /notes)
-- `src/brain_mcp/mcp_server.py` — new tools `list_notes` (all indexed notes,
-  optional domain filter) and `delete_note` (remove a note from the index, de-index
-  only — the `.md` file stays); `ingest_note` docstring clarified (re-ingest always
-  replaces old chunks)
-- `tests/test_titan_client.py`, `tests/test_mcp_tools.py` — tests for both
+- `src/brain_mcp/mcp_server.py` — neue Tools `list_notes` (alle indexierten Notizen,
+  optionaler Domain-Filter) und `delete_note` (eine Notiz aus dem Index entfernen, nur de-indexieren
+  — die `.md`-Datei bleibt); `ingest_note`-Docstring präzisiert (Re-Ingest ersetzt immer
+  alte Chunks)
+- `tests/test_titan_client.py`, `tests/test_mcp_tools.py` — Tests für beide
 
-**Counterpart in the titan repo:** new endpoint `GET /notes` — see titan `docs/ai/`
+**Gegenstück im titan-Repo:** neuer Endpunkt `GET /notes` — siehe titan `docs/ai/`
 (2026-05-17).
 
-**Quality status:** `ruff` + `mypy --strict` green, `pytest` 52 passed.
+**Quality-Status:** `ruff` + `mypy --strict` grün, `pytest` 52 passed.
 
-## Operational setup
+## Betriebliches Setup
 
-`titan-service` and `brain-mcp` were restarted — the two new tools are live in the
-connector. Otherwise unchanged (see handoff 2026-05-16).
+`titan-service` und `brain-mcp` wurden neu gestartet — die zwei neuen Tools sind im
+Connector live. Ansonsten unverändert (siehe Übergabe 2026-05-16).
 
-## Context: brain-dashboard
+## Kontext: brain-dashboard
 
-In parallel the new repo `~/projects/brain-dashboard` was created — a web control
-panel (port 9200) for status, logs and control of the RAG system. Its own repo with
-its own `docs/ai/`. Runs as an `enabled` systemd user unit.
+Parallel wurde das neue Repo `~/projects/brain-dashboard` erstellt — ein Web-Control-
+Panel (Port 9200) für Status, Logs und Steuerung des RAG-Systems. Eigenes Repo mit
+eigenem `docs/ai/`. Läuft als `enabled` systemd-User-Unit.
 
-## Open / Next steps
+## Offen / Nächste Schritte
 
-- No open items from stage 2.
+- Keine offenen Punkte aus Stage 2.
 
 ---
 
-# Handoff – 2026-05-16
-Model: Claude Opus 4.7
+# Übergabe – 2026-05-16
+Modell: Claude Opus 4.7
 
-## Done in this session
+## In dieser Sitzung erledigt
 
-Claude integration of brain-mcp **fully implemented** — OAuth + Tailscale Funnel.
-The `brain` connector is live in Claude and verified end-to-end.
+Claude-Integration von brain-mcp **vollständig implementiert** — OAuth + Tailscale Funnel.
+Der `brain`-Connector ist in Claude live und end-to-end verifiziert.
 
-**Code changes:**
-- `src/brain_mcp/config.py` — settings for HTTP transport (`mcp_transport/host/port`)
-  and OAuth (`mcp_auth`, `mcp_base_url`, `github_client_id/secret`,
+**Code-Änderungen:**
+- `src/brain_mcp/config.py` — Settings für HTTP-Transport (`mcp_transport/host/port`)
+  und OAuth (`mcp_auth`, `mcp_base_url`, `github_client_id/secret`,
   `github_allowed_logins`)
-- `src/brain_mcp/mcp_server.py` — HTTP transport in `main()`; `_build_auth()` builds
-  the OAuth provider when `BRAIN_MCP_AUTH=github` and passes it to `FastMCP(auth=...)`
-- `src/brain_mcp/auth.py` (new) — GitHub OAuth proxy with `GitHubAllowlistVerifier`,
-  which only admits allowed GitHub logins
-- `deploy/brain-mcp.service` — systemd user service (HTTP on `127.0.0.1:9100`)
-- `.env.example` — new variables documented
+- `src/brain_mcp/mcp_server.py` — HTTP-Transport in `main()`; `_build_auth()` baut
+  den OAuth-Provider, wenn `BRAIN_MCP_AUTH=github`, und übergibt ihn an `FastMCP(auth=...)`
+- `src/brain_mcp/auth.py` (neu) — GitHub-OAuth-Proxy mit `GitHubAllowlistVerifier`,
+  der nur erlaubte GitHub-Logins zulässt
+- `deploy/brain-mcp.service` — systemd-User-Service (HTTP auf `127.0.0.1:9100`)
+- `.env.example` — neue Variablen dokumentiert
 
-**Quality status:** `ruff` + `mypy` green, `pytest` 38 passed (unit tests).
+**Quality-Status:** `ruff` + `mypy` grün, `pytest` 38 passed (Unit-Tests).
 
-## Operational setup (running)
+## Betriebliches Setup (laufend)
 
-- `brain-mcp.service`: HTTP on `127.0.0.1:9100`. The units (`titan-service`,
-  `brain-mcp`, `brain-watcher`) are `linked` — **no** autostart. Start/stop go through
-  the desktop script `RAG-System.bat` (see DECISIONS.md 2026-05-16).
-- Auth: GitHub OAuth proxy, allowlist = `charlieLucke`. Configuration in
+- `brain-mcp.service`: HTTP auf `127.0.0.1:9100`. Die Units (`titan-service`,
+  `brain-mcp`, `brain-watcher`) sind `linked` — **kein** Autostart. Start/Stopp laufen über
+  das Desktop-Skript `RAG-System.bat` (siehe DECISIONS.md 2026-05-16).
+- Auth: GitHub-OAuth-Proxy, Allowlist = `charlieLucke`. Konfiguration in
   `brain-mcp/.env` (gitignored): `BRAIN_MCP_AUTH=github`, `BRAIN_MCP_BASE_URL`,
   `BRAIN_GITHUB_CLIENT_ID/SECRET`, `BRAIN_GITHUB_ALLOWED_LOGINS`.
 - `tailscale funnel` (persistent): `https://<your-tailnet-host>.ts.net/` →
   `http://localhost:9100`. Reset: `tailscale funnel --https=443 off`.
-- Claude connector URL: `https://<your-tailnet-host>.ts.net/mcp`.
-- GitHub OAuth app: callback `https://<your-tailnet-host>.ts.net/auth/callback`.
-- E2E verified: `query_knowledge` from Claude returns vault hits (score 5.71).
+- Claude-Connector-URL: `https://<your-tailnet-host>.ts.net/mcp`.
+- GitHub-OAuth-App: Callback `https://<your-tailnet-host>.ts.net/auth/callback`.
+- E2E verifiziert: `query_knowledge` aus Claude liefert Vault-Treffer (Score 5,71).
 
-## Open / Next steps
+## Offen / Nächste Schritte
 
-- Optional: set Docker Desktop to autostart on Windows (otherwise it isn't running
-  after a reboot → Qdrant container missing → titan-service won't start).
+- Optional: Docker Desktop unter Windows auf Autostart setzen (sonst läuft es nach
+  einem Reboot nicht → Qdrant-Container fehlt → titan-service startet nicht).
 
-## Notes / gotchas
+## Notizen / Stolperfallen
 
-- Service order: Docker Desktop → Qdrant container → `titan-service` → `brain-mcp`
-  / `brain-watcher`. If the chain isn't up, the tools return "Titan unreachable".
-- **WSL networking:** the Funnel (Windows `tailscaled`) only reaches `localhost:9100`
-  with an intact WSL2 mirrored-networking bridge. After a reboot it can be degraded
-  (WSL has only `lo`, no `ethX`, no default route) → Funnel returns **502 Bad
-  Gateway**. Fix: `wsl --shutdown`, then restart WSL.
-- Vault ingest: the watcher only picks up `.md` files from the vault; each note needs
-  a frontmatter field `domain:` (otherwise Titan rejects it). PDFs go through the
-  Titan CLI (`python -m titan.ingest`), not the watcher.
+- Service-Reihenfolge: Docker Desktop → Qdrant-Container → `titan-service` → `brain-mcp`
+  / `brain-watcher`. Ist die Kette nicht oben, liefern die Tools „Titan unreachable".
+- **WSL-Networking:** die Funnel (Windows `tailscaled`) erreicht `localhost:9100` nur
+  mit intakter WSL2-Mirrored-Networking-Bridge. Nach einem Reboot kann sie degradiert
+  sein (WSL hat nur `lo`, kein `ethX`, keine Default-Route) → Funnel liefert **502 Bad
+  Gateway**. Fix: `wsl --shutdown`, dann WSL neu starten.
+- Vault-Ingest: der Watcher nimmt nur `.md`-Dateien aus dem Vault auf; jede Notiz braucht
+  ein Frontmatter-Feld `domain:` (sonst weist Titan sie ab). PDFs laufen über die
+  Titan-CLI (`python -m titan.ingest`), nicht über den Watcher.
 
 ---
 
-# Handoff – 2026-05-13
-Model: Claude Sonnet 4.6
+# Übergabe – 2026-05-13
+Modell: Claude Sonnet 4.6
 
-## Done in this session
+## In dieser Sitzung erledigt
 
-Phase 2 (B0–B10) fully implemented and committed to `main`.
+Phase 2 (B0–B10) vollständig implementiert und nach `main` committet.
 
-**New files:**
-- `src/brain_mcp/config.py` — Pydantic settings (BRAIN_ prefix)
-- `src/brain_mcp/schemas.py` — local copy of the Titan API schemas
+**Neue Dateien:**
+- `src/brain_mcp/config.py` — Pydantic-Settings (BRAIN_-Präfix)
+- `src/brain_mcp/schemas.py` — lokale Kopie der Titan-API-Schemas
 - `src/brain_mcp/titan_client.py` — TitanClient (httpx + tenacity)
-- `src/brain_mcp/mcp_server.py` — FastMCP + 4 tools
-- `src/brain_mcp/watcher.py` — VaultWatcher + reconnect logic
-- `deploy/brain-watcher.service` — systemd user service
-- `deploy/README.md` — activation guide + Claude Desktop JSON
-- `tests/test_titan_client.py` — httpx.MockTransport unit tests
-- `tests/test_mcp_tools.py` — MCP tool unit tests (patch)
-- `tests/test_watcher.py` — watcher unit + integration tests
-- `tests/integration/test_e2e_pipeline.py` — E2E polling tests
+- `src/brain_mcp/mcp_server.py` — FastMCP + 4 Tools
+- `src/brain_mcp/watcher.py` — VaultWatcher + Reconnect-Logik
+- `deploy/brain-watcher.service` — systemd-User-Service
+- `deploy/README.md` — Aktivierungsanleitung + Claude-Desktop-JSON
+- `tests/test_titan_client.py` — httpx.MockTransport-Unit-Tests
+- `tests/test_mcp_tools.py` — MCP-Tool-Unit-Tests (patch)
+- `tests/test_watcher.py` — Watcher-Unit- + Integrationstests
+- `tests/integration/test_e2e_pipeline.py` — E2E-Polling-Tests
 
-**Modified files:**
-- `docs/ai/CONTEXT.md`, `CURRENT_TASK.md`, `DECISIONS.md` — filled in
-- `pyproject.toml` — entry points, mypy overrides
+**Geänderte Dateien:**
+- `docs/ai/CONTEXT.md`, `CURRENT_TASK.md`, `DECISIONS.md` — befüllt
+- `pyproject.toml` — Entry Points, mypy-Overrides
 - `.pre-commit-config.yaml` — mypy additional_dependencies
 
-**Quality status:**
-- `ruff check` → 0 errors
-- `mypy src tests` → 0 errors (15 files)
-- `pytest` → 33 passed, 3 skipped (E2E without Titan)
-- pre-commit → all hooks green
-- 1 commit on `main`
+**Quality-Status:**
+- `ruff check` → 0 Fehler
+- `mypy src tests` → 0 Fehler (15 Dateien)
+- `pytest` → 33 passed, 3 skipped (E2E ohne Titan)
+- pre-commit → alle Hooks grün
+- 1 Commit auf `main`
 
-## In progress
+## In Arbeit
 
-Nothing open — B0–B10 fully committed.
+Nichts offen — B0–B10 vollständig committet.
 
-## Next concrete step
+## Nächster konkreter Schritt
 
-1. **B11: audit round (Opus)** — check the checklist from plan section 4.13
-2. **Manual activation** (deploy/README.md):
+1. **B11: Audit-Runde (Opus)** — die Checkliste aus Plan-Abschnitt 4.13 prüfen
+2. **Manuelle Aktivierung** (deploy/README.md):
    ```bash
    mkdir -p ~/.config/systemd/user/
    ln -sf ~/projects/brain-mcp/deploy/brain-watcher.service ~/.config/systemd/user/
    systemctl --user daemon-reload && systemctl --user enable --now brain-watcher
    systemctl --user status brain-watcher
    ```
-3. **Claude Desktop config** (Windows side, manual):
-   - edit `%APPDATA%\Claude\claude_desktop_config.json`
-   - content see `deploy/README.md` section 2
-   - restart Claude Desktop → check the 4 brain tools
-4. **E2E test** with a real Titan:
+3. **Claude-Desktop-Konfiguration** (Windows-Seite, manuell):
+   - `%APPDATA%\Claude\claude_desktop_config.json` bearbeiten
+   - Inhalt siehe `deploy/README.md` Abschnitt 2
+   - Claude Desktop neu starten → die 4 brain-Tools prüfen
+4. **E2E-Test** mit einem echten Titan:
    ```bash
    uv run pytest tests/integration/ -m integration -v
    ```
 
-## Open questions / decisions needed
+## Offene Fragen / nötige Entscheidungen
 
-- **B11 audit:** Opus should check the checklist from plan section 4.13, especially:
-  MCP tool descriptions, top_k clamp, watcher exception handling, path validation
-- **VAULT_ROOT correct?** Plan and CONTEXT.md say `/mnt/f/vault` — if the vault is
-  mounted elsewhere, `BRAIN_VAULT_ROOT` in the systemd unit and Claude Desktop config
-  must be adjusted.
+- **B11-Audit:** Opus sollte die Checkliste aus Plan-Abschnitt 4.13 prüfen, besonders:
+  MCP-Tool-Beschreibungen, top_k-Clamp, Watcher-Exception-Handling, Pfadvalidierung
+- **VAULT_ROOT korrekt?** Plan und CONTEXT.md sagen `/mnt/f/vault` — ist der Vault
+  woanders gemountet, müssen `BRAIN_VAULT_ROOT` in der systemd-Unit und der Claude-Desktop-Konfiguration
+  angepasst werden.
 
-## Files the next session must read first
+## Dateien, die die nächste Sitzung zuerst lesen muss
 
-1. `~/projects/titan/docs/ai/plans/plan_titan_brain_v2.md` section 4.13 — audit checklist
-2. `docs/ai/CONTEXT.md` — stack and pitfalls
-3. `src/brain_mcp/mcp_server.py` — tool implementations
-4. `src/brain_mcp/watcher.py` — watcher + reconnect
+1. `~/projects/titan/docs/ai/plans/plan_titan_brain_v2.md` Abschnitt 4.13 — Audit-Checkliste
+2. `docs/ai/CONTEXT.md` — Stack und Fallstricke
+3. `src/brain_mcp/mcp_server.py` — Tool-Implementierungen
+4. `src/brain_mcp/watcher.py` — Watcher + Reconnect
 
-## Notes / gotchas discovered
+## Notizen / entdeckte Stolperfallen
 
-- The pre-commit mypy hook needs extra `additional_dependencies` (pydantic, fastmcp,
-  httpx, watchdog, tenacity) — without them it sees BaseModel as `Any`
-- `@mcp.tool()` and tenacity `@_RETRY` are untyped decorators in mypy 2.0 →
+- Der pre-commit mypy-Hook braucht zusätzliche `additional_dependencies` (pydantic, fastmcp,
+  httpx, watchdog, tenacity) — ohne sie sieht er BaseModel als `Any`
+- `@mcp.tool()` und tenacity `@_RETRY` sind in mypy 2.0 untypisierte Dekoratoren →
   pyproject.toml `disable_error_code = ["untyped-decorator", "no-any-return"]`
-- `watchdog` has no type stubs → `ignore_missing_imports = true`
-- A replace_all edit on `# type: ignore[misc]` → `` had a bug: it removed the
-  whitespace before `def` → syntax error. In future: don't remove `# type: ignore`
-  with replace_all; edit it per line instead.
-- VS Code shows "Package not installed" for all brain-mcp deps — the wrong venv
-  (mein-projekt) is active in the workspace. Everything works correctly in `.venv`.
-```
+- `watchdog` hat keine Type-Stubs → `ignore_missing_imports = true`
+- Ein replace_all-Edit auf `# type: ignore[misc]` → `` hatte einen Bug: er entfernte das
+  Whitespace vor `def` → Syntaxfehler. Künftig: `# type: ignore` nicht mit replace_all
+  entfernen; stattdessen pro Zeile editieren.
+- VS Code zeigt „Package not installed" für alle brain-mcp-Deps — das falsche venv
+  (mein-projekt) ist im Workspace aktiv. In `.venv` funktioniert alles korrekt.

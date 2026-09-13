@@ -1,98 +1,100 @@
-# Architecture
+# Architektur
 
-> System-level design. Update when modules, contracts, or data models change.
+> Design auf Systemebene. Aktualisieren, wenn sich Module, Contracts oder Datenmodelle ändern.
 
-## Overview
+## Überblick
 
-brain-mcp is the bridge between an Obsidian vault, the
-[titan](https://github.com/charlieLucke/titan) RAG service, and Claude. It
-consists of two cooperating but independent services: a **vault watcher** that
-auto-indexes changed notes into titan, and an **MCP server** that exposes six
-search/admin tools to Claude. Both talk to titan exclusively over its HTTP API —
-there is no direct coupling to titan's code or to Qdrant.
+brain-mcp ist die Brücke zwischen einem Obsidian-Vault, dem
+[titan](https://github.com/charlieLucke/titan)-RAG-Service und Claude. Es besteht
+aus zwei kooperierenden, aber unabhängigen Diensten: einem **Vault-Watcher**, der
+geänderte Notizen automatisch in titan indexiert, und einem **MCP-Server**, der
+Claude sechs Such-/Verwaltungs-Werkzeuge bereitstellt. Beide sprechen mit titan
+ausschließlich über dessen HTTP-API — es gibt keine direkte Kopplung an titans
+Code oder an Qdrant.
 
 ```
 Obsidian (Windows) → Vault (F:\vault\) → brain-watcher (watchdog)
                                             │ HTTP POST /ingest/file
                                             ▼
-                                     titan-service :8765  (separate repo)
+                                     titan-service :8765  (separates Repo)
                                             ▲
-Claude ──(stdio | HTTP/Funnel connector)──► brain-mcp    │ HTTP /search etc.
+Claude ──(stdio | HTTP/Funnel-Connector)──► brain-mcp    │ HTTP /search usw.
 ```
 
-## Module map
+## Modulübersicht
 
 ```
 src/brain_mcp/
-├── config.py        # Settings (env prefix BRAIN_): titan URL, vault root, debounce, transport, OAuth
-├── schemas.py       # Pydantic request/response schemas (local copy of the titan API schemas)
-├── titan_client.py  # TitanClient: async httpx + retry via tenacity
-├── mcp_server.py    # FastMCP server + the six MCP tools + transport selection (stdio | http)
-├── auth.py          # GitHub OAuth proxy + GitHubAllowlistVerifier (login allowlist)
-└── watcher.py       # VaultWatcher: watchdog observer, debounce, reconnect, reconcile
+├── config.py        # Settings (Env-Präfix BRAIN_): titan-URL, Vault-Root, Debounce, Transport, OAuth
+├── schemas.py       # Pydantic Request/Response-Schemas (lokale Kopie der titan-API-Schemas)
+├── titan_client.py  # TitanClient: async httpx + Retry via tenacity
+├── mcp_server.py    # FastMCP-Server + die sechs MCP-Tools + Transport-Wahl (stdio | http)
+├── auth.py          # GitHub-OAuth-Proxy + GitHubAllowlistVerifier (Login-Allowlist)
+└── watcher.py       # VaultWatcher: watchdog-Observer, Debounce, Reconnect, Reconcile
 deploy/
-├── brain-watcher.service  # systemd user service (vault watcher)
-├── brain-mcp.service      # systemd user service (HTTP MCP server)
-└── README.md              # activation + connector guide
+├── brain-watcher.service  # systemd-User-Service (Vault-Watcher)
+├── brain-mcp.service      # systemd-User-Service (HTTP-MCP-Server)
+└── README.md              # Aktivierungs- + Connector-Anleitung
 ```
 
-## The two services
+## Die zwei Dienste
 
 ### brain-watcher
-A systemd user daemon that watches the vault recursively. Changed `.md` files are
-batched with a **30 s debounce** (several quick saves coalesce into one ingest) and
-handed to titan via `POST /ingest/file`. **Reconnect logic** with exponential
-backoff and a **cool-down** ensure a Titan outage neither blocks nor crashes the
-watcher; delete events land in a pending queue when needed and are worked off after
-recovery. On startup a **reconcile pass** diffs the vault against titan's index and
-catches up any changes made during a downtime.
+Ein systemd-User-Daemon, der den Vault rekursiv überwacht. Geänderte `.md`-Dateien
+werden mit **30 s Debounce** gebündelt (mehrere schnelle Speichervorgänge ergeben
+einen Ingest) und per `POST /ingest/file` an titan gereicht. Eine **Reconnect-Logik**
+mit exponentiellem Backoff und ein **Cool-down** sorgen dafür, dass ein Titan-Ausfall
+den Watcher nicht blockiert oder abstürzen lässt; Lösch-Events landen bei Bedarf in
+einer Pending-Queue und werden nach Wiederherstellung abgearbeitet. Beim Start
+gleicht ein **Reconcile-Pass** den Vault gegen titans Index ab und holt Änderungen
+nach, die während einer Downtime entstanden sind.
 
-### brain-mcp (the MCP server)
-Built on **FastMCP**. The transport is switchable:
-- **stdio** — the MCP client (e.g. Claude Desktop) launches brain-mcp as a
-  subprocess; no network exposure, no auth.
-- **Streamable-HTTP** — a long-lived server (systemd service on port 9100) made
-  publicly reachable via a Tailscale Funnel and secured with GitHub OAuth, wired
-  into Claude as a custom connector.
+### brain-mcp (der MCP-Server)
+Auf Basis von **FastMCP**. Der Transport ist umschaltbar:
+- **stdio** — der MCP-Client (z. B. Claude Desktop) startet brain-mcp als Subprozess;
+  keine Netzwerk-Exposition, keine Auth.
+- **Streamable-HTTP** — ein langlebiger Server (systemd-Service auf Port 9100), der
+  über eine Tailscale Funnel öffentlich erreichbar gemacht und durch GitHub-OAuth
+  abgesichert als Claude-Custom-Connector eingebunden wird.
 
-## External services
+## Externe Services
 
-| Service | Connection | Purpose |
+| Service | Verbindung | Zweck |
 |---|---|---|
-| titan | HTTP `127.0.0.1:8765` | RAG backend: search, ingest, notes/domains |
-| GitHub OAuth | HTTPS (api.github.com) | authentication + login allowlist in HTTP mode |
-| Tailscale Funnel | public HTTPS | makes the local MCP server reachable from the Anthropic cloud |
-| Obsidian vault | filesystem (watchdog) | source of the notes to index |
+| titan | HTTP `127.0.0.1:8765` | RAG-Backend: Suche, Ingest, Notes/Domains |
+| GitHub OAuth | HTTPS (api.github.com) | Authentifizierung + Login-Allowlist im HTTP-Modus |
+| Tailscale Funnel | öffentliches HTTPS | macht den lokalen MCP-Server für die Anthropic-Cloud erreichbar |
+| Obsidian-Vault | Dateisystem (watchdog) | Quelle der zu indexierenden Notizen |
 
-## Data flow
+## Datenfluss
 
-### Indexing (vault → titan)
+### Indexierung (Vault → titan)
 ```
-.md changed → watchdog event → debounce (30 s) → TitanClient.ingest_file()
-           → POST titan /ingest/file → (titan: Late Chunking + BGE-M3 + Qdrant upsert)
-```
-
-### Query (Claude → vault)
-```
-Claude calls MCP tool query_knowledge → brain-mcp → POST titan /search
-      → ranked chunks → formatted as Markdown back to Claude
+.md geändert → watchdog-Event → Debounce (30 s) → TitanClient.ingest_file()
+            → POST titan /ingest/file → (titan: Late Chunking + BGE-M3 + Qdrant-Upsert)
 ```
 
-MCP tool return values are always Markdown strings (never raw JSON), so Claude can
-render them directly.
+### Abfrage (Claude → Vault)
+```
+Claude ruft MCP-Tool query_knowledge auf → brain-mcp → POST titan /search
+       → gerankte Chunks → als Markdown formatiert zurück an Claude
+```
 
-## Security & boundaries
+MCP-Tool-Rückgabewerte sind immer Markdown-Strings (nie rohes JSON), damit Claude
+sie direkt darstellen kann.
 
-- **Auth only in HTTP mode:** stdio stays local/unauthenticated; the public HTTP
-  mode enforces OAuth + allowlist.
-- **Path validation against `VAULT_ROOT`** happens both client-side (brain-mcp) and
-  server-side (titan).
-- **Decoupling:** brain-mcp imports no titan code; it keeps a local copy of the API
-  schemas — the repos stay independently deployable.
+## Sicherheit & Grenzen
+
+- **Auth nur im HTTP-Modus:** stdio bleibt lokal/unauthentifiziert; der öffentliche
+  HTTP-Modus erzwingt OAuth + Allowlist.
+- **Pfadvalidierung gegen `VAULT_ROOT`** erfolgt sowohl clientseitig (brain-mcp) als
+  auch serverseitig (titan).
+- **Entkopplung:** brain-mcp importiert keinen titan-Code, sondern hält eine lokale
+  Kopie der API-Schemas — die Repos bleiben unabhängig deploybar.
 
 ## Deployment
 
-Two systemd user services. In always-on mode `brain-mcp` binds `0.0.0.0:9100` (not
-`127.0.0.1`) so the Windows-side Tailscale Funnel can reach it under WSL2 mirrored
-networking. Linger keeps the services alive without an open login session. Details:
-[`deploy/README.md`](../../deploy/README.md).
+Zwei systemd-User-Services. Im Always-on-Modus bindet `brain-mcp` an `0.0.0.0:9100`
+(nicht `127.0.0.1`), damit die Windows-seitige Tailscale Funnel ihn unter WSL2
+Mirrored Networking erreicht. Linger hält die Dienste auch ohne offene Login-Sitzung
+am Leben. Details: [`deploy/README.md`](../../deploy/README.md).
