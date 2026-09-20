@@ -124,8 +124,11 @@ Einstellungen → Connectors → „Add custom connector":
 - **URL:** `https://<your-tailnet-host>.ts.net/mcp`
 
 Claude startet den OAuth-Flow → GitHub-Login (mit dem erlaubten Konto) → fertig.
-Danach sind die sechs Tools `query_knowledge`, `find_related`, `list_domains`,
-`list_notes`, `ingest_note` und `delete_note` verfügbar.
+Danach sind alle zwölf Werkzeuge verfügbar: sechs lesende und sechs schreibende.
+Welche das sind, steht in der Tabelle im [Haupt-README](../README.md) — und nur
+dort. Hier stand die Liste ein zweites Mal und nannte bis zum 20.09.2026 sechs,
+ohne die schreibenden — ausgerechnet die sind der Grund, warum
+`BRAIN_GITHUB_ALLOWED_LOGINS` aus Abschnitt 2 nicht optional ist.
 
 ---
 
