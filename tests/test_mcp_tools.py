@@ -287,6 +287,53 @@ def test_list_notes_connect_error() -> None:
     assert "not reachable" in result
 
 
+def _notes_response_with_hash() -> object:
+    from brain_mcp.schemas import NoteInfo, NotesResponse
+
+    return NotesResponse(
+        notes=[
+            NoteInfo(
+                source_path="/mnt/f/vault/a.md",
+                domain="lernen",
+                chunk_count=3,
+                content_hash="b" * 64,
+            ),
+            NoteInfo(source_path="/mnt/f/vault/b.md", domain="titan", chunk_count=5),
+        ],
+        total=2,
+    )
+
+
+def test_list_notes_omits_hash_by_default() -> None:
+    """The listing every session makes must not carry 64 hex characters per note."""
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", return_value=_notes_response_with_hash()):
+        result = mcp_server.list_notes()
+
+    assert "hash" not in result
+
+
+def test_list_notes_with_hash_prints_it_whole() -> None:
+    """edit_note compares the whole string, so a shortened hash could not be passed back."""
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", return_value=_notes_response_with_hash()):
+        result = mcp_server.list_notes(with_hash=True)
+
+    assert "b" * 64 in result
+
+
+def test_list_notes_with_hash_says_when_none_is_indexed() -> None:
+    """A note without an indexed hash says so instead of silently dropping the field."""
+    from brain_mcp import mcp_server
+
+    with patch.object(mcp_server._client, "list_notes", return_value=_notes_response_with_hash()):
+        result = mcp_server.list_notes(with_hash=True)
+
+    assert "_not indexed_" in result
+
+
 # ---------------------------------------------------------------------------
 # delete_note
 # ---------------------------------------------------------------------------

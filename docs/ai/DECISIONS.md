@@ -233,3 +233,23 @@ gediffed, die Antwort ist also die ganze Notiz. Gemessen an
 `plan-zentrales-dashboard.md`: 473 Zeilen statt „(keine Historie)".
 Hinweis für wer Phase 4b baut: `offene_punkte` und `graph_check` liegen **nicht hier** —
 sie stehen in `titan/src/titan/tools/`, und titan liefert bereits HTTP aus.
+
+## 2026-09-20: Der `content_hash` steht in `list_notes`, aber nur auf Verlangen
+
+**Entscheidung:** `list_notes` bekommt `with_hash: bool = False`. Nur damit druckt die
+Auflistung den `content_hash` je Notiz, und dann ungekürzt.
+**Begründung:** `edit_note` verlangt den Hash, und sein Docstring versprach ihn von
+`list_notes` oder `query_knowledge` — beide gaben ihn nicht aus, obwohl `NoteInfo` das Feld
+längst trägt (`schemas.py`). Damit war `edit_note` über den Connector unbenutzbar:
+`append_section` blieb der einzige Schreibweg auf bestehende Notizen, und Anhängen statt
+Anpassen ist genau das, was der Skill `vault-notiz` unter „Umgang mit Überholtem" vermeiden
+will. Am 20.09.2026 in einer Sitzung aufgelaufen, die zwei Vault-Notizen fortschreiben sollte.
+**Erwogene Alternativen:** Den Hash immer mitdrucken — verworfen, weil 64 Hexzeichen je Notiz
+jede Auflistung belasten, auch die Sitzungen, die nur suchen; dieselbe Überlegung, aus der
+`vault_style` ein eigenes Werkzeug ist statt Text in jeder Werkzeugbeschreibung. Ein eigenes
+`note_state(file_path)` — verworfen, weil es die Werkzeugoberfläche für etwas verbreitert, das
+eine Zeile der bestehenden Auflistung leistet.
+**Konsequenzen:** Der Hash kommt aus dem Index. Wurde die Notiz seither außerhalb von titan
+geändert, lehnt `edit_note` ab, bis `ingest_note` nachgezogen hat — das ist die Absicht der
+Sperre, kein Mangel. Gekürzt darf er nie ausgegeben werden, `edit_note` vergleicht die ganze
+Zeichenkette.

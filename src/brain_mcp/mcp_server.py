@@ -15,7 +15,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from brain_mcp import read_api
 from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
-from brain_mcp.schemas import Chunk
+from brain_mcp.schemas import Chunk, NoteInfo
 from brain_mcp.style import lade_stil
 from brain_mcp.titan_client import TitanClient
 from brain_mcp.vault_writer import (
@@ -266,9 +266,20 @@ def find_related(file_path: str, top_k: int = 5) -> str:
 # ---------------------------------------------------------------------------
 
 
+def _hash_suffix(note: NoteInfo) -> str:
+    """Render the `content_hash` that `edit_note` compares against.
+
+    Never shortened. `edit_note` compares the whole string, so a display-friendly
+    prefix would be a value the caller cannot pass back.
+    """
+    if note.content_hash:
+        return f", hash: `{note.content_hash}`"
+    return ", hash: _not indexed_ (legacy or PDF chunk)"
+
+
 @mcp.tool()
 @_titan_errors
-def list_notes(domain: str | None = None) -> str:
+def list_notes(domain: str | None = None, with_hash: bool = False) -> str:
     """List every note currently in the search index.
 
     Use this to see what is indexed — to spot stale entries, confirm a file made
@@ -276,6 +287,10 @@ def list_notes(domain: str | None = None) -> str:
 
     Args:
         domain: Optional domain filter (e.g. "projekte"). Leave empty to list all.
+        with_hash: Also print each note's `content_hash` — the value `edit_note`
+            demands before it will touch an existing note. Off by default: it is
+            64 hex characters per note, and a listing that answers "what is
+            indexed" should not make every caller pay for them.
 
     Returns:
         Markdown list of indexed notes with their domain and chunk count.
@@ -286,7 +301,9 @@ def list_notes(domain: str | None = None) -> str:
     if not notes:
         return f"_No indexed notes in domain {domain!r}._" if domain else "_No notes indexed yet._"
     lines = [
-        f"- `{n.source_path}` — domain: **{n.domain}**, {n.chunk_count} chunk(s)" for n in notes
+        f"- `{n.source_path}` — domain: **{n.domain}**, {n.chunk_count} chunk(s)"
+        + (_hash_suffix(n) if with_hash else "")
+        for n in notes
     ]
     return f"{len(notes)} indexed note(s):\n" + "\n".join(lines)
 
@@ -524,15 +541,17 @@ def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -
     Targeted replacement, not a rewrite: `old_text` must occur exactly once, so a
     vague match fails loudly instead of changing the wrong paragraph.
 
-    `content_hash` is the safety catch. Pass the hash you got from `list_notes`
-    or `query_knowledge` for this note; if the file changed since then, the write
-    is refused rather than silently overwriting someone else's edit.
+    `content_hash` is the safety catch. Get it from `list_notes(with_hash=True)`;
+    if the file changed since then, the write is refused rather than silently
+    overwriting someone else's edit. That hash comes from the index, so a note
+    edited outside titan is refused until `ingest_note` has caught up — which is
+    the point, not a defect.
 
     Args:
         file_path: Path to the note inside the vault.
         old_text: The exact text to replace. Must appear exactly once.
         new_text: What to put there instead.
-        content_hash: The sha256 you saw when you read the note.
+        content_hash: The sha256 from `list_notes(with_hash=True)`.
 
     Returns:
         Path, commit hash and index status.

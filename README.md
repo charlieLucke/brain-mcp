@@ -41,7 +41,7 @@ brain-mcp besteht aus zwei Diensten:
 | `query_knowledge` | Den Vault in natürlicher Sprache durchsuchen (optionaler `domain`-Filter, `top_k`). |
 | `find_related` | Notizen finden, die einer gegebenen Notiz semantisch verwandt sind. |
 | `list_domains` | Alle Wissensbereiche (Domains) im Index mit ihrer Chunk-Anzahl auflisten. |
-| `list_notes` | Jede indexierte Notiz auflisten, mit Domain + Chunk-Anzahl. |
+| `list_notes` | Jede indexierte Notiz auflisten, mit Domain + Chunk-Anzahl; `with_hash=True` ergänzt den `content_hash`, den `edit_note` verlangt. |
 | `ingest_note` | Eine Notiz sofort neu indexieren, unter Umgehung der Watcher-Verzögerung. |
 | `delete_note` | Eine Notiz de-indexieren (entfernt nur ihre Chunks; die Datei auf der Platte bleibt). |
 
