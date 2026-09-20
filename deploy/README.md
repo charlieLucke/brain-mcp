@@ -149,3 +149,22 @@ curl -s -o /dev/null -w '%{http_code}\n' -X POST \
   -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}' \
   http://127.0.0.1:9100/mcp
 ```
+
+---
+
+## 6. Aktualisieren — vor jedem Neustart
+
+`WorkingDirectory` und `ExecStart` der Unit zeigen auf den Checkout
+`~/projects/brain-mcp`: **der laufende Code ist dieses Arbeitsverzeichnis.** Ein
+Push nach GitHub ändert daran nichts, und ein Neustart allein bringt denselben
+alten Stand wieder hoch — inklusive der Werkzeugbeschreibungen, die der Client
+beim Verbinden liest.
+
+```bash
+cd ~/projects/brain-mcp
+git pull
+uv sync   # nur nötig, wenn sich Abhängigkeiten geändert haben; `uv sync` installiert das Projekt editierbar
+systemctl --user restart brain-watcher brain-mcp
+```
+
+Wer in diesem Verzeichnis den Branch wechselt, wechselt den laufenden Server mit.
