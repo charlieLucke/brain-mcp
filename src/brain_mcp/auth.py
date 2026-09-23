@@ -96,4 +96,9 @@ def build_github_auth(
         token_verifier=verifier,
         base_url=base_url,
         issuer_url=base_url,
+        # CIMD (Client ID Metadata Documents) bewirbt FastMCP per Default. Claude bevorzugt
+        # das Verfahren dann gegenueber der dynamischen Registrierung, ueberspringt
+        # POST /register und bricht mit "Registrierung beim Anmeldedienst fehlgeschlagen"
+        # ab. Abgeschaltet faellt der Client auf DCR zurueck, das hier nachweislich traegt.
+        enable_cimd=False,
     )
