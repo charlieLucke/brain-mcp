@@ -21,6 +21,10 @@ System in Produktion und mit Claude verbunden.
       Workspace-Plan: `docs/ai/plans/2026-06-02_vault-index-startup-reconcile.md`
       Committet: `784cf75` (brain-mcp feat)
       Quality-Gate: 57/57 Tests grün (inkl. 5 neue Reconcile-Tests); mypy-strict grün; `./workspace.sh check` grün.
+- [x] 2026-09-23: Server auf `origin/main` gezogen (`list_notes` mit `with_hash`,
+      `14d40be`) und neu gestartet — `deploy/README.md` §6
+- [x] 2026-09-23: `enable_cimd=False` in `auth.py` committet und gepusht (`b39af12`);
+      `make check` grün, 153/153 Tests
 
 ## Offen
 
@@ -29,8 +33,7 @@ System in Produktion und mit Claude verbunden.
 ## Notizen
 
 - Connector-URL: `https://<your-tailnet-host>.ts.net/mcp`
-- 6 Tools: `query_knowledge`, `ingest_note`, `list_domains`, `find_related`,
-  `list_notes`, `delete_note`.
+- 12 Tools — Liste und Zweck in der Tabelle im `README.md`, nicht hier dupliziert.
 - Auth-Konfiguration (Secrets) in `brain-mcp/.env` (gitignored).
 - Die Funnel braucht eine intakte WSL2-Mirrored-Networking-Bridge — sonst 502 (Fix:
   `wsl --shutdown`). Details: `docs/ai/DECISIONS.md` + `HANDOFF.md` (2026-05-16).

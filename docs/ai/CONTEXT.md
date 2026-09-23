@@ -101,6 +101,12 @@ uv run pytest tests/integration/ -m integration -v  # E2E (benötigt Titan)
   erreichbar, nicht nur `/mcp`. Deshalb prüft `/api/vault/*` selbst ein
   Bearer-Token, statt einen Loopback-Bind anzunehmen — und wird ohne Token gar
   nicht registriert.
+- **Der Checkout ist der laufende Code.** `WorkingDirectory` und `ExecStart` der Unit
+  zeigen auf `~/projects/brain-mcp`. Ein Push nach GitHub ändert den laufenden Server
+  nicht, ein bloßer Neustart bringt den alten Stand wieder hoch: erst `git pull`, dann
+  `systemctl --user restart brain-watcher brain-mcp` (`deploy/README.md` §6).
+- **„Registrierung beim Anmeldedienst fehlgeschlagen" in Claude** = FastMCP bewirbt
+  CIMD. `enable_cimd=False` in `auth.py` muss stehen bleiben (DECISIONS 2026-09-23).
 
 
 - VS Code zeigt „Package not installed"-Hinweise — das ist das falsche venv (mein-projekt).

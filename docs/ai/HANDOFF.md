@@ -1,3 +1,31 @@
+# Übergabe – 2026-09-23
+Modell: Claude Opus 5.5
+
+## In dieser Sitzung erledigt
+
+- **Server aktualisiert:** `git pull` (`4d30056..828ee5c`), `uv sync` (nichts zu tun),
+  `systemctl --user restart brain-watcher brain-mcp`. Lokal verifiziert: `/mcp` → 401
+  ohne Token, OAuth-Discovery → 200, Log `Uvicorn running on http://0.0.0.0:9100`.
+  Damit ist `list_notes(with_hash=True)` live — der Weg zum `content_hash` für `edit_note`.
+- **CIMD-Fix committet:** `enable_cimd=False` lag uncommittet in `auth.py`, lief aber
+  schon mit (der Checkout ist der laufende Code). Jetzt `b39af12`, gepusht.
+  Begründung in `DECISIONS.md` (2026-09-23).
+- Doku nachgezogen: `DECISIONS.md`, `CONTEXT.md` (zwei Fallstricke), `CURRENT_TASK.md`
+  (veraltete „6 Tools"-Liste ersetzt), Vault-Notizen `projekt-brain-mcp` und
+  `rag-system-runbook`.
+
+## Nicht verifiziert
+
+- Weg von außen durch Funnel/caddy und ein echter Tool-Aufruf aus Claude nach dem
+  Neustart. Ein Claude-Chat, der vor dem Neustart verbunden war, sieht noch die alten
+  Werkzeugbeschreibungen (z. B. `list_notes` ohne `with_hash`) — Connector neu verbinden.
+
+## Offen / Nächste Schritte
+
+- Keine neuen. Offene Punkte zum Reconcile stehen in der Vault-Notiz `projekt-brain-mcp`.
+
+---
+
 # Übergabe – 2026-05-22
 Modell: Claude Opus 4.7
 

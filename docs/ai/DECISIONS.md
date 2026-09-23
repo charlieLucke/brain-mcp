@@ -253,3 +253,18 @@ eine Zeile der bestehenden Auflistung leistet.
 geändert, lehnt `edit_note` ab, bis `ingest_note` nachgezogen hat — das ist die Absicht der
 Sperre, kein Mangel. Gekürzt darf er nie ausgegeben werden, `edit_note` vergleicht die ganze
 Zeichenkette.
+
+## 2026-09-23: CIMD im OAuth-Proxy abgeschaltet, Claude registriert sich per DCR
+
+**Entscheidung:** `build_github_auth()` übergibt `enable_cimd=False` an den
+FastMCP-`OAuthProxy` (`b39af12`).
+**Begründung:** FastMCP bewirbt Client ID Metadata Documents per Default. Claude
+bevorzugt das Verfahren dann gegenüber der dynamischen Registrierung, überspringt
+`POST /register` und bricht die Anmeldung mit „Registrierung beim Anmeldedienst
+fehlgeschlagen" ab. Mit abgeschaltetem CIMD fällt der Client auf DCR zurück, und
+das trägt hier nachweislich — es ist der Weg, über den der Connector seit Mai läuft.
+**Erwogene Alternativen:** Keine untersucht. CIMD zum Laufen zu bringen wurde nicht
+versucht; DCR trägt, und darauf kam es an.
+**Konsequenzen:** Das Verhalten hängt am Default von FastMCP. Ändert ein Update
+den Parameternamen oder die Semantik, taucht derselbe Anmeldefehler wieder auf —
+bei einem FastMCP-Update also den Connector einmal frisch verbinden.
