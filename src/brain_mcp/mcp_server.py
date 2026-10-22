@@ -505,7 +505,7 @@ def write_note(file_path: str, domain: str, content: str) -> str:
             A bare filename lands in notes/<domain>/ — notes are filed by
             domain since 2026-08-29. Pass a full path only to override that.
         domain: One of arbeitsplatz, betrieb, rag-system, projekte, vault,
-            lernen, business. Unknown values are refused — a new domain is a
+            lernen, business, privat. Unknown values are refused — a new domain is a
             decision about the vault's structure and belongs to the operator.
         content: The Markdown body, starting with a `# Heading`.
 

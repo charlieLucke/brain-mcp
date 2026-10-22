@@ -38,7 +38,7 @@ from brain_mcp.config import settings
 # unbekannte Domain wortlos an — es gibt dort keine Fehlermeldung, die einen
 # Tippfehler auffaengt. Deshalb faengt ihn dieses Werkzeug.
 VAULT_DOMAINS: frozenset[str] = frozenset(
-    {"arbeitsplatz", "betrieb", "rag-system", "projekte", "vault", "lernen", "business"}
+    {"arbeitsplatz", "betrieb", "rag-system", "projekte", "vault", "lernen", "business", "privat"}
 )
 
 QUELLE_AGENT = "agent-entwurf"
