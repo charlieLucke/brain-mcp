@@ -71,6 +71,12 @@ def _build_auth() -> OAuthProxy | None:
 mcp: FastMCP = FastMCP("brain", auth=_build_auth())
 _client = TitanClient(base_url=settings.titan_url)
 
+# Jedes Tool traegt `output_schema=None`. Ohne das leitet FastMCP aus dem
+# Rueckgabetyp `str` ein Schema ab und schickt jede Antwort zweimal: als Text
+# und noch einmal als `{"result": ...}`. Claude Code reicht dem Modell dann den
+# JSON-String mit maskierten Zeilenumbruechen statt des Markdowns. Gemessen am
+# 24.10.2026; tests/test_tool_surface.py haelt es fest.
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -138,7 +144,7 @@ def _format_chunks(chunks: list[Chunk], cache_hit: bool, latency_ms: int) -> str
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def query_knowledge(
     query: str,
@@ -167,7 +173,7 @@ def query_knowledge(
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def ingest_note(file_path: str, force: bool = False) -> str:
     """Trigger immediate re-indexing of a note (bypasses the watcher's 30-second delay).
@@ -214,7 +220,7 @@ def ingest_note(file_path: str, force: bool = False) -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def list_domains() -> str:
     """List all domains in the knowledge vault with chunk counts.
@@ -238,7 +244,7 @@ def list_domains() -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def find_related(file_path: str, top_k: int = 5) -> str:
     """Find notes semantically related to a given note.
@@ -277,7 +283,7 @@ def _hash_suffix(note: NoteInfo) -> str:
     return ", hash: _not indexed_ (legacy or PDF chunk)"
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def list_notes(domain: str | None = None, with_hash: bool = False) -> str:
     """List every note currently in the search index.
@@ -324,7 +330,7 @@ def _days_since(iso_date: str | None) -> int | None:
     return (date.today() - then).days
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def list_stale(older_than_days: int = 90, domain: str | None = None) -> str:
     """Find notes whose claims may no longer be true.
@@ -467,7 +473,7 @@ def _nach_dem_schreiben(path: Path, commit: str, hinweis: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 def vault_style() -> str:
     """The house form for notes in this vault. Call this BEFORE writing or editing one.
 
@@ -485,7 +491,7 @@ def vault_style() -> str:
     return lade_stil()
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_write_errors
 def write_note(file_path: str, domain: str, content: str) -> str:
     """Create a NEW note in the vault. Fails if the file already exists.
@@ -530,7 +536,7 @@ def write_note(file_path: str, domain: str, content: str) -> str:
     )
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_write_errors
 def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -> str:
     """Replace an exact passage in an existing note.
@@ -582,7 +588,7 @@ def edit_note(file_path: str, old_text: str, new_text: str, content_hash: str) -
     return _nach_dem_schreiben(path, commit, f"Edited **{path.name}**.")
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_write_errors
 def append_section(file_path: str, section: str) -> str:
     """Append a section to the end of an existing note.
@@ -612,7 +618,7 @@ def append_section(file_path: str, section: str) -> str:
     return _nach_dem_schreiben(path, commit, f"Appended to **{path.name}**.")
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_write_errors
 def mark_verified(file_path: str, quelle: str = "gemessen") -> str:
     """Record that a note's claims were checked against reality today.
@@ -659,7 +665,7 @@ def mark_verified(file_path: str, quelle: str = "gemessen") -> str:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(output_schema=None)
 @_titan_errors
 def delete_note(file_path: str) -> str:
     """Remove a note from the search index (de-index only).
