@@ -15,7 +15,7 @@ from fastmcp.server.auth.oauth_proxy import OAuthProxy
 from brain_mcp import read_api
 from brain_mcp.auth import build_github_auth
 from brain_mcp.config import settings
-from brain_mcp.schemas import Chunk, NoteInfo
+from brain_mcp.schemas import Chunk, LinkedNote, NoteInfo
 from brain_mcp.style import lade_stil
 from brain_mcp.titan_client import TitanClient
 from brain_mcp.vault_writer import (
@@ -247,24 +247,52 @@ def list_domains() -> str:
 @mcp.tool(output_schema=None)
 @_titan_errors
 def find_related(file_path: str, top_k: int = 5) -> str:
-    """Find notes semantically related to a given note.
+    """Find notes related to a given note: by content, and by wikilink.
 
     Uses the embedding of the note's first chunk to search for similar content
-    in the vault, excluding the note itself.
+    in the vault, excluding the note itself. Also lists the notes that link
+    here and that this note links to — for "what depends on X", the notes
+    linking here are usually the answer.
 
     Args:
         file_path: Absolute path to the source Markdown note inside the vault.
         top_k: Number of related notes to return (1-20). Default 5.
 
     Returns:
-        Markdown-formatted list of related chunks with source paths and scores.
+        Markdown-formatted list of related chunks with source paths and scores,
+        followed by the wikilinked note names in both directions.
     """
     path = Path(file_path).resolve()
     if not path.is_relative_to(settings.vault_root):
         return f"Error: {file_path!r} is outside the vault root ({settings.vault_root})."
 
     result = _client.find_related(path, top_k=top_k)
-    return _format_chunks(result.related, cache_hit=False, latency_ms=result.latency_ms)
+    teile = [_format_chunks(result.related, cache_hit=False, latency_ms=result.latency_ms)]
+    if result.linked:
+        teile.append(_verlinkt(result.linked))
+    return "\n\n".join(teile)
+
+
+def _verlinkt(linked: list[LinkedNote]) -> str:
+    """Die Wikilink-Nachbarn als Namen, je Richtung eine Zeile.
+
+    Nur der Name: `resolve_note_path` nimmt ihn direkt an, und volle Pfade waeren
+    bei 27 Rueckverweisen (mein-pc) eine Wand statt einer Liste. Titan liefert
+    die Liste seit dem 29.08.2026; bis zum 24.10.2026 kam sie nur nach einem
+    Schreibvorgang beim Leser an (`_wer_zeigt_hierher`).
+    """
+
+    def namen(richtungen: tuple[str, ...]) -> list[str]:
+        return sorted(Path(n.source_path).stem for n in linked if n.direction in richtungen)
+
+    rein = namen(("incoming", "both"))
+    raus = namen(("outgoing", "both"))
+    zeilen = ["**Wikilinks:**"]
+    if rein:
+        zeilen.append(f"- Linked here ({len(rein)}): " + ", ".join(f"`{n}`" for n in rein))
+    if raus:
+        zeilen.append(f"- Links from here ({len(raus)}): " + ", ".join(f"`{n}`" for n in raus))
+    return "\n".join(zeilen)
 
 
 # ---------------------------------------------------------------------------

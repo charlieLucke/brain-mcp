@@ -240,6 +240,43 @@ def test_find_related_success() -> None:
     assert "BGE-M3" in result
 
 
+def test_find_related_lists_wikilinked_notes_by_name_and_direction() -> None:
+    """Eine Abhaengigkeitsfrage ("was haengt an X") beantworten die Rueckverweise.
+
+    titan liefert sie seit dem 29.08.2026 mit, beim Leser kamen sie nie an.
+    """
+    from brain_mcp import mcp_server
+    from brain_mcp.schemas import LinkedNote
+
+    def _link(name: str, direction: str) -> LinkedNote:
+        return LinkedNote(
+            source_path=f"/mnt/f/vault/notes/x/{name}.md",
+            domain="x",
+            direction=direction,  # type: ignore[arg-type]  # Literal aus Testdaten
+        )
+
+    resp = FindRelatedResponse(
+        source_path=str(_VAULT_ROOT / "notes/coolify-prod.md"),
+        related=[],
+        linked=[
+            _link("projekt-lucke-digital", "incoming"),
+            _link("hosting-architektur", "both"),
+            _link("mein-pc", "outgoing"),
+        ],
+        latency_ms=60,
+    )
+    with (
+        patch("brain_mcp.mcp_server.settings") as mock_settings,
+        patch.object(mcp_server._client, "find_related", return_value=resp),
+    ):
+        mock_settings.vault_root = _VAULT_ROOT
+        result = mcp_server.find_related(str(_VAULT_ROOT / "notes/coolify-prod.md"))
+
+    assert "Linked here (2): `hosting-architektur`, `projekt-lucke-digital`" in result
+    assert "Links from here (2): `hosting-architektur`, `mein-pc`" in result
+    assert "/mnt/f/vault/notes/x/" not in result  # nur Namen, keine Pfade
+
+
 # ---------------------------------------------------------------------------
 # list_notes
 # ---------------------------------------------------------------------------
