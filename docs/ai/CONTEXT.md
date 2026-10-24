@@ -107,6 +107,11 @@ uv run pytest tests/integration/ -m integration -v  # E2E (benötigt Titan)
   `systemctl --user restart brain-watcher brain-mcp` (`deploy/README.md` §6).
 - **„Registrierung beim Anmeldedienst fehlgeschlagen" in Claude** = FastMCP bewirbt
   CIMD. `enable_cimd=False` in `auth.py` muss stehen bleiben (DECISIONS 2026-09-23).
+- **`Auth error returned: invalid_token` im Journal heißt nicht, dass Claude scheitert.**
+  FastMCP meldet `invalid_token` auch, wenn gar kein Token mitkommt. Die Einträge von
+  `127.0.0.1` alle ~15 s sind die Health-Probe des homebase-Dashboards (`GET /mcp`, 401
+  mit Absicht). Claude kommt über caddy und steht als `::1` im Log (`POST /mcp`,
+  OAuth-Discovery). Fehlen die `::1`-Zeilen, ist Claude gar nicht angekommen.
 
 
 - VS Code zeigt „Package not installed"-Hinweise — das ist das falsche venv (mein-projekt).
