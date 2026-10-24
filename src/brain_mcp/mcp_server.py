@@ -149,7 +149,7 @@ def _format_chunks(chunks: list[Chunk], cache_hit: bool, latency_ms: int) -> str
 def query_knowledge(
     query: str,
     domain: str | None = None,
-    top_k: int = 10,
+    top_k: int = 5,
 ) -> str:
     """Search my personal knowledge vault.
 
@@ -157,7 +157,7 @@ def query_knowledge(
         query: Natural-language question or keywords to search for.
         domain: Optional domain filter. Use list_domains() first to see available
             domains (e.g. "lernen", "titan", "trading"). Leave empty to search all.
-        top_k: Number of chunks to return (1-30). Default 10.
+        top_k: Number of chunks to return (1-30). Default 5.
 
     Returns:
         Markdown-formatted list of relevant chunks with source paths and scores.
