@@ -104,6 +104,17 @@ def test_query_knowledge_top_k_clamped() -> None:
     assert captured[0] == 30
 
 
+def test_query_knowledge_defaults_to_five_chunks() -> None:
+    """Zehn Treffer kosteten ~4 700 Tokens und kamen aus nur 4-6 Notizen (24.10.2026)."""
+    from brain_mcp import mcp_server
+
+    leer = SearchResponse(query="test", chunks=[], sub_queries=[], cache_hit=False, latency_ms=0)
+    with patch.object(mcp_server._client, "search", return_value=leer) as search:
+        mcp_server.query_knowledge("test")
+
+    assert search.call_args.kwargs["top_k"] == 5
+
+
 # ---------------------------------------------------------------------------
 # ingest_note
 # ---------------------------------------------------------------------------
