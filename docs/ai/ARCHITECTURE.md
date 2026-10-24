@@ -71,7 +71,7 @@ Auf Basis von **FastMCP**. Der Transport ist umschaltbar:
 ### Indexierung (Vault → titan)
 ```
 .md geändert → watchdog-Event → Debounce (30 s) → TitanClient.ingest_file()
-            → POST titan /ingest/file → (titan: Late Chunking + BGE-M3 + Qdrant-Upsert)
+            → POST titan /ingest/file → (titan: Chunking + BGE-M3 je Chunk mit Kopfzeile + Qdrant-Upsert)
 ```
 
 ### Abfrage (Claude → Vault)
