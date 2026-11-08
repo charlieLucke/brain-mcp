@@ -160,7 +160,6 @@ def query_knowledge(
     query: str,
     domain: str | None = None,
     top_k: int = 5,
-    full: bool = False,
 ) -> str:
     """Search Charlie's personal vault: his devices, servers, projects, scripts, decisions.
 
@@ -180,19 +179,17 @@ def query_knowledge(
         domain: Optional domain filter. Use list_domains() first to see available
             domains (e.g. "lernen", "titan", "trading"). Leave empty to search all.
         top_k: Number of chunks to return (1-30). Default 5.
-        full: Hits come shortened to the lines that match the query (about 600 characters
-            each, half the tokens). Set True for whole passages when a hit was cut off.
 
     Returns:
         Markdown-formatted list of relevant chunks with source paths and scores.
         Returns an error message if the Titan service is unreachable.
     """
     top_k = min(max(1, top_k), 30)
-    kompakt = None if full or settings.kompakt_zeichen <= 0 else settings.kompakt_zeichen
+    kompakt = settings.kompakt_zeichen if settings.kompakt_zeichen > 0 else None
     result = _client.search(query, domain=domain, top_k=top_k, kompakt_zeichen=kompakt)
     text = _format_chunks(result.chunks, result.cache_hit, result.latency_ms)
     if kompakt and result.chunks:
-        text += "\n*Hits shortened to matching lines; full=True returns whole passages.*"
+        text += "\n*Hits shortened to matching lines.*"
     return text
 
 

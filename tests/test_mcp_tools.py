@@ -115,15 +115,16 @@ def test_query_knowledge_defaults_to_five_chunks() -> None:
     assert search.call_args.kwargs["top_k"] == 5
 
 
-def test_query_knowledge_shortens_hits_unless_full() -> None:
+def test_query_knowledge_shortens_hits_only_when_configured() -> None:
     from brain_mcp import mcp_server
 
     leer = SearchResponse(query="test", chunks=[], sub_queries=[], cache_hit=False, latency_ms=0)
     with patch.object(mcp_server._client, "search", return_value=leer) as search:
         mcp_server.query_knowledge("test")
-        assert search.call_args.kwargs["kompakt_zeichen"] == 600
-        mcp_server.query_knowledge("test", full=True)
         assert search.call_args.kwargs["kompakt_zeichen"] is None
+        with patch.object(mcp_server.settings, "kompakt_zeichen", 600):
+            mcp_server.query_knowledge("test")
+        assert search.call_args.kwargs["kompakt_zeichen"] == 600
 
 
 def test_titan_client_sends_kompakt_only_when_asked() -> None:
