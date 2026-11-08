@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     vault_root: Path = Path("/mnt/f/vault")
     # Injectierbar für Tests (Tests setzen z.B. 0.1)
     debounce_seconds: float = 30.0
+    # Treffer von query_knowledge auf rund so viele Zeichen kuerzen (titan.kompakt), 0 = aus.
+    # Gemessen 09.11.2026 an 60 Teilantworten mit Reranker: 600 Zeichen halbieren den
+    # Ergebnistext (6 810 -> 3 368 je Suche) und kosten 5 Punkte (0,87 -> 0,82).
+    kompakt_zeichen: int = 600
 
     # MCP-Server-Transport: "stdio" (Default) oder "http" für Claude-Desktop-Connectors
     mcp_transport: str = "stdio"

@@ -54,14 +54,21 @@ class TitanClient:
         top_k: int = 10,
         use_decompose: bool = False,
         use_cache: bool = True,
+        kompakt_zeichen: int | None = None,
     ) -> SearchResponse:
-        """POST /search — retries on ConnectError."""
+        """POST /search — retries on ConnectError.
+
+        ``kompakt_zeichen`` laesst titan jeden Treffer auf die zur Frage passenden Zeilen
+        kuerzen (``titan.kompakt``); ``None`` liefert ganze Passagen.
+        """
         payload: dict[str, object] = {
             "query": query,
             "top_k": top_k,
             "use_decompose": use_decompose,
             "use_cache": use_cache,
         }
+        if kompakt_zeichen:
+            payload |= {"kompakt": True, "kompakt_zeichen": kompakt_zeichen}
         if domain is not None:
             payload["domain"] = domain
         resp = self._client.post("/search", json=payload)
