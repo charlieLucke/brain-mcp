@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     vault_root: Path = Path("/mnt/f/vault")
     # Injectierbar für Tests (Tests setzen z.B. 0.1)
     debounce_seconds: float = 30.0
+    # Treffer von query_knowledge auf rund so viele Zeichen kuerzen (titan.kompakt), 0 = aus.
+    # Standard aus. Gemessen 08.11.2026: 600 Zeichen halbieren den Ergebnistext, schneiden aber
+    # oft das Beleg-Zitat ab (Goldset Stelle @5 0,80 -> 0,72; Agenten auf 46 verketteten
+    # Fragen: belegte Teile 0,60 -> 0,52) und kosten rund 300 ms. Auch 1200 verlieren noch.
+    kompakt_zeichen: int = 0
 
     # MCP-Server-Transport: "stdio" (Default) oder "http" für Claude-Desktop-Connectors
     mcp_transport: str = "stdio"

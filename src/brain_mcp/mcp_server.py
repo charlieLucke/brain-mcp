@@ -74,7 +74,8 @@ INSTRUCTIONS = (
     "planst oder erklaerst, das von seiner Lage abhaengt (welche Hardware, was laeuft "
     "schon, was wurde verworfen, welches Projekt), suche zuerst mit query_knowledge, "
     "ohne dass er darum bittet. Antworte dann auf seine vorhandenen Mittel zugeschnitten "
-    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat; sag das."
+    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat. "
+    "Mehrteilige Frage: erst in Teilfragen zerlegen, je eine Suche, dann Namen aus Treffern folgen."
 )
 
 mcp: FastMCP = FastMCP("brain", instructions=INSTRUCTIONS, auth=_build_auth())
@@ -167,6 +168,12 @@ def query_knowledge(
     or plan. Look up what he already has, then tailor the answer to it instead of listing
     generic options. Not needed for general knowledge questions.
 
+    Questions with several parts or steps (measured 09.11.2026: +18 points of parts found):
+    1. Before searching, split the question into atomic sub-questions, one search each,
+       phrased as a statement the note would contain.
+    2. Read the hits. A device, service, script, date or [[linked-note]] named there that
+       the question depends on is the next search; continue until every part is quoted.
+
     Args:
         query: Natural-language question or keywords to search for.
         domain: Optional domain filter. Use list_domains() first to see available
@@ -178,8 +185,12 @@ def query_knowledge(
         Returns an error message if the Titan service is unreachable.
     """
     top_k = min(max(1, top_k), 30)
-    result = _client.search(query, domain=domain, top_k=top_k)
-    return _format_chunks(result.chunks, result.cache_hit, result.latency_ms)
+    kompakt = settings.kompakt_zeichen if settings.kompakt_zeichen > 0 else None
+    result = _client.search(query, domain=domain, top_k=top_k, kompakt_zeichen=kompakt)
+    text = _format_chunks(result.chunks, result.cache_hit, result.latency_ms)
+    if kompakt and result.chunks:
+        text += "\n*Hits shortened to matching lines.*"
+    return text
 
 
 # ---------------------------------------------------------------------------
