@@ -74,7 +74,8 @@ INSTRUCTIONS = (
     "planst oder erklaerst, das von seiner Lage abhaengt (welche Hardware, was laeuft "
     "schon, was wurde verworfen, welches Projekt), suche zuerst mit query_knowledge, "
     "ohne dass er darum bittet. Antworte dann auf seine vorhandenen Mittel zugeschnitten "
-    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat; sag das."
+    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat. "
+    "Mehrteilige Frage: erst in Teilfragen zerlegen, je eine Suche, dann Namen aus Treffern folgen."
 )
 
 mcp: FastMCP = FastMCP("brain", instructions=INSTRUCTIONS, auth=_build_auth())
@@ -166,6 +167,12 @@ def query_knowledge(
     situation: "I want to do X", "where does Y run", "how do I start Z", a recommendation
     or plan. Look up what he already has, then tailor the answer to it instead of listing
     generic options. Not needed for general knowledge questions.
+
+    Questions with several parts or steps (measured 09.11.2026: +18 points of parts found):
+    1. Before searching, split the question into atomic sub-questions, one search each,
+       phrased as a statement the note would contain.
+    2. Read the hits. A device, service, script, date or [[linked-note]] named there that
+       the question depends on is the next search; continue until every part is quoted.
 
     Args:
         query: Natural-language question or keywords to search for.
