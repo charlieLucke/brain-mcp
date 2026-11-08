@@ -68,7 +68,16 @@ def _build_auth() -> OAuthProxy | None:
     )
 
 
-mcp: FastMCP = FastMCP("brain", auth=_build_auth())
+INSTRUCTIONS = (
+    "Charlies persoenlicher Wissens-Vault: seine Geraete, Server, Projekte, Skripte, "
+    "Entscheidungen, Plaene und Lebensumstaende. Bevor du Charlie etwas empfiehlst, "
+    "planst oder erklaerst, das von seiner Lage abhaengt (welche Hardware, was laeuft "
+    "schon, was wurde verworfen, welches Projekt), suche zuerst mit query_knowledge, "
+    "ohne dass er darum bittet. Antworte dann auf seine vorhandenen Mittel zugeschnitten "
+    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat; sag das."
+)
+
+mcp: FastMCP = FastMCP("brain", instructions=INSTRUCTIONS, auth=_build_auth())
 _client = TitanClient(base_url=settings.titan_url)
 
 # Jedes Tool traegt `output_schema=None`. Ohne das leitet FastMCP aus dem
@@ -151,7 +160,12 @@ def query_knowledge(
     domain: str | None = None,
     top_k: int = 5,
 ) -> str:
-    """Search my personal knowledge vault.
+    """Search Charlie's personal vault: his devices, servers, projects, scripts, decisions.
+
+    Call this on your own, before answering, whenever the answer depends on Charlie's
+    situation: "I want to do X", "where does Y run", "how do I start Z", a recommendation
+    or plan. Look up what he already has, then tailor the answer to it instead of listing
+    generic options. Not needed for general knowledge questions.
 
     Args:
         query: Natural-language question or keywords to search for.
