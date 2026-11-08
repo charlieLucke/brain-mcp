@@ -18,6 +18,7 @@ from brain_mcp.config import settings
 from brain_mcp.schemas import Chunk, LinkedNote, NoteInfo
 from brain_mcp.style import lade_stil
 from brain_mcp.titan_client import TitanClient
+from brain_mcp.vault_map import karte
 from brain_mcp.vault_writer import (
     QUELLE_AGENT,
     QUELLEN,
@@ -74,7 +75,8 @@ INSTRUCTIONS = (
     "planst oder erklaerst, das von seiner Lage abhaengt (welche Hardware, was laeuft "
     "schon, was wurde verworfen, welches Projekt), suche zuerst mit query_knowledge, "
     "ohne dass er darum bittet. Antworte dann auf seine vorhandenen Mittel zugeschnitten "
-    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat; sag das."
+    "und nenne die Notiz. Allgemeine Optionen nur, wenn der Vault nichts dazu hat; sag das. "
+    "Bei Plaenen erst vault_map der passenden Domains lesen, dann gezielt suchen."
 )
 
 mcp: FastMCP = FastMCP("brain", instructions=INSTRUCTIONS, auth=_build_auth())
@@ -312,6 +314,27 @@ def _verlinkt(linked: list[LinkedNote]) -> str:
 # ---------------------------------------------------------------------------
 # list_notes
 # ---------------------------------------------------------------------------
+
+
+@mcp.tool(output_schema=None)
+def vault_map(domain: str | None = None) -> str:
+    """What exists in the vault: every note's name and first sentence, by domain.
+
+    Read this before planning or a multi-step lookup, so the follow-up searches
+    can target notes you did not know about. One domain costs 70-470 tokens,
+    the whole vault about 2 100.
+
+    Args:
+        domain: Optional, e.g. "arbeitsplatz". Empty: all domains.
+    """
+    found = karte(settings.vault_root / "notes", domain)
+    if not found:
+        return f"_No notes in domain {domain!r}._" if domain else "_The vault has no notes._"
+    lines: list[str] = []
+    for name, notes in found.items():
+        lines.append(f"## {name} ({len(notes)})")
+        lines += [f"- [[{stem}]] {satz}".rstrip() for stem, satz in notes]
+    return "\n".join(lines)
 
 
 def _hash_suffix(note: NoteInfo) -> str:
