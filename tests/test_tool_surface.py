@@ -77,3 +77,16 @@ def test_a_call_returns_one_text_block_and_no_structured_content() -> None:
 
     assert bloecke == 1
     assert strukturiert is None
+
+
+def test_the_server_tells_clients_to_look_up_before_answering() -> None:
+    """claude.ai sieht weder CLAUDE.md noch Skills; nur Anweisungen und Beschreibungen."""
+    from brain_mcp.mcp_server import mcp
+
+    async def run() -> str | None:
+        async with Client(mcp) as client:
+            return client.initialize_result.instructions
+
+    instructions = anyio.run(run)
+    assert instructions and "query_knowledge" in instructions
+    assert len(instructions) <= 600, "die Anweisungen gehen in jede Sitzung mit"
