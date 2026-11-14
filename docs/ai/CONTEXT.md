@@ -81,7 +81,7 @@ tests/
 
 ## Konventionen
 
-- Alle Konventionen aus CLAUDE.md (ruff, mypy strict, snake_case, Google-Docstrings usw.)
+- Alle Konventionen aus AGENTS.md (ruff, mypy strict, snake_case, Google-Docstrings usw.)
 - MCP-Tool-Rückgabewerte sind immer Markdown-Strings, niemals JSON
 - Pfadvalidierung gegen VAULT_ROOT erfolgt sowohl clientseitig (MCP) ALS AUCH serverseitig (Titan)
 
